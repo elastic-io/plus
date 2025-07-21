@@ -1,6 +1,3 @@
-## 4. docs/api.md
-
-```markdown
 # Plus Artifacts Server API Reference
 
 This document provides comprehensive API documentation for Plus Artifacts Server.
