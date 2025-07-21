@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plus Repository Server</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="main-header">
+            <div class="header-content">
+                <div class="brand-section">
+                    <div class="brand-icon">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 16V8C20.9996 7.64928 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64928 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7.5 4.21L12 6.81L16.5 4.21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7.5 19.79V14.6L3 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M21 12L16.5 14.6V19.79" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 22.08V17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="brand-text">
+                        <h1>Plus Repository Server</h1>
+                        <p>High-performance package repository management</p>
+                    </div>
+                </div>
+                
+                <nav class="header-nav">
+                    <a href="/" class="nav-item home-link">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M9 22V12H15V22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Home</span>
+                    </a>
+                    <a href="#upload" class="nav-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 15V19C21 19.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M7 10L12 5L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 5V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Upload</span>
+                    </a>
+                    <a href="#create" class="nav-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Create</span>
+                    </a>
+                    <a href="#list" class="nav-item">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 7V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M3 7H21L19 21H5L3 7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M9 11V13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M15 11V13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Repositories</span>
+                    </a>
+                </nav>
+            </div>
+        </header>
+
+        <main>
+            <section id="upload" class="upload-section">
+                <div class="section-header">
+                    <h2>Upload Package</h2>
+                    <p>Upload RPM packages to your repositories</p>
+                </div>
+                <form id="uploadForm" enctype="multipart/form-data" class="modern-form">
+                    <div class="form-group">
+                        <label for="repository">Repository:</label>
+                        <select id="repository" name="repository" required>
+                            <option value="">Select Repository</option>
+                        </select>
+                    </div>
+                   <div class="form-group">
+    <label for="file">RPM Package:</label>
+    <div class="file-upload-area" id="fileUploadArea">
+        <input type="file" id="file" name="file" accept=".rpm" required style="display: none;">
+        <div class="file-upload-content" id="fileUploadContent">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M21 15V19C21 19.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 10L12 5L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 5V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p>Drop your RPM file here or <span class="browse-link">browse</span></p>
+            <div class="file-info" id="fileInfo" style="display: none;">
+                <span class="file-name" id="fileName"></span>
+                <span class="file-size" id="fileSize"></span>
+            </div>
+        </div>
+    </div>
+</div>
+ 
+                    <button type="submit" class="btn-primary">Upload Package</button>
+                </form>
+                <div id="uploadResult" class="result"></div>
+            </section>
+
+<section id="create" class="repo-section">
+    <div class="section-header">
+        <h2>Create Repository</h2>
+        <p>Set up new package repositories with multi-level paths</p>
+    </div>
+    <form id="createRepoForm" class="modern-form">
+        <div class="form-group">
+            <label for="repoName">Repository Name:</label>
+            <input type="text" id="repoName" name="name" required placeholder="e.g., oe-release">
+        </div>
+        <div class="form-group">
+            <label for="repoPath">Sub Path (Optional):</label>
+            <input type="text" id="repoPath" name="path" placeholder="e.g., x86_64/python (leave empty for root)">
+            <small>Create nested directories like: name/x86_64, name/x86_64/python, etc.</small>
+        </div>
+        <div class="form-group">
+            <label for="repoDesc">Description:</label>
+            <input type="text" id="repoDesc" name="description" placeholder="Enter repository description">
+        </div>
+        <button type="submit" class="btn-primary">Create Repository</button>
+    </form>
+    <div id="createResult" class="result"></div>
+</section>
+
+            <section id="list" class="list-section">
+                <div class="section-header">
+                    <h2>Repositories</h2>
+                    <p>Manage your package repositories</p>
+                </div>
+                <div class="section-actions">
+                    <button id="refreshRepos" class="btn-secondary">
+                        Refresh List
+                    </button>
+                </div>
+                <div id="repoList" class="repo-list"></div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>
