@@ -33,7 +33,7 @@ We welcome feature suggestions! Please:
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/your-username/plus.git
+   git clone https://github.com/elastic-io/plus.git
    cd plus
    ```
 

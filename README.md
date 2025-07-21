@@ -221,7 +221,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [ ] Multi-tenant support
 - [ ] Package vulnerability scanning
 - [ ] GraphQL API
-- [ ] Helm chart repository support
 
 ## 📄 License
 
