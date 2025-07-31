@@ -17,20 +17,20 @@ all: build
 build:
 	@echo "Building $(PROJECT_NAME) for macOS..."
 	@mkdir -p $(OUTPUT_DIR)
-	@$(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN) $(SRC_DIR)
+	@$(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-darwin-arm64 $(SRC_DIR)
 	@echo "Build completed: $(OUTPUT_BIN) for macOS"
 
 build-amd:
 	@echo "Building $(PROJECT_NAME) for $(GOOS)/$(GOARCH)..."
 	@mkdir -p $(OUTPUT_DIR)
-	@GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-amd $(SRC_DIR)
-	@echo "Build completed: $(OUTPUT_BIN)-amd"
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-$(GOOS)-amd64 $(SRC_DIR)
+	@echo "Build completed: $(OUTPUT_BIN)-$(GOOS)-amd"
 
 build-arm:
 	@echo "Building $(PROJECT_NAME) for $(GOOS)/arm..."
 	@mkdir -p $(OUTPUT_DIR)
-	@GOOS=$(GOOS) GOARCH=arm $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-arm $(SRC_DIR)
-	@echo "Build completed: $(OUTPUT_BIN)-arm"
+	@GOOS=$(GOOS) GOARCH=arm $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-$(GOOS)-arm64 $(SRC_DIR)
+	@echo "Build completed: $(OUTPUT_BIN)-$(GOOS)-arm"
 
 build-all: build build-amd build-arm
 

@@ -13,11 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package signing verification
 - Advanced metrics and alerting
 
-## [1.0.0] - 2024-01-15
+## [1.0.0] - 2025-06-15
 
 ### Added
 - Initial release of Plus Artifacts Server
-- RPM and DEB package support
+- RPM package support
 - RESTful API for package management
 - Real-time metadata generation
 - Batch upload operations
@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CORS configuration
 - Safe file handling
 
-## [0.9.0] - 2024-01-01
+## [0.9.0] - 2025-05-01
 
 ### Added
 - Beta release for testing
@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concurrent access issues
 - Metadata generation bugs
 
-## [0.8.0] - 2023-12-15
+## [0.8.0] - 2025-04-15
 
 ### Added
 - Alpha release
