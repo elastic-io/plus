@@ -13,6 +13,7 @@ type Storage interface {
 	ListWithOptions(ctx context.Context, prefix string, opts ListOptions) ([]FileInfo, error)
 	CreateDir(ctx context.Context, path string) error
 	GetPath(path string) string
+	Exists(ctx context.Context, path string) (bool, error)
 }
 
 type FileInfo struct {

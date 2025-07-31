@@ -34,6 +34,7 @@ A modern, high-performance package repository server written in Go, designed to 
 | Multi-format Support | ❌ RPM only | ✅ RPM+DEB | More flexible |
 | Container Ready | ❌ Complex setup | ✅ Single binary | Cloud-native |
 
+
 ## 📦 Quick Start
 
 ### Using Docker (Recommended)
@@ -68,9 +69,26 @@ plus --config config.yaml
 ```bash
 git clone https://github.com/elastic-io/plus.git
 cd plus
-go build -o plus ./cmd/plus
-./plus --config config.yaml
+
+# Build using make
+make build      # Build for your current platform
+make build-all  # Build for all supported platforms
+
+# Run the application
+./bin/plus --config config.yaml
 ```
+
+### Using Make Commands
+
+```bash
+make deps       # Install dependencies
+make test       # Run tests
+make build-amd  # Build for Linux AMD64
+make build-arm  # Build for Linux ARM
+make clean      # Clean build artifacts
+make help       # Show all available commands
+```
+
 
 ## ⚙️ Configuration
 

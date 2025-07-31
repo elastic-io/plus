@@ -363,7 +363,7 @@ func handleWebStatic(ctx *fasthttp.RequestCtx, staticHandler fasthttp.RequestHan
 }
 
 // 仓库文件直接访问 (nginx 兼容方式)
-func handleRepoFileAccess(ctx *fasthttp.RequestCtx, repoHandler fasthttp.RequestHandler) bool {
+func handleRepoFileAccess(ctx *fasthttp.RequestCtx, _ fasthttp.RequestHandler) bool {
 	path := string(ctx.Path())
 
 	// 匹配 /repo/{repoName}/{filepath} 但排除 API 端点
@@ -1099,7 +1099,6 @@ func handleRepoFiles(ctx *fasthttp.RequestCtx, repoName, filePath string) {
 	}
 }
 
-// 修复目录列表生成函数
 func generateDirectoryHTML(repoName, subPath string, entries []os.DirEntry) string {
 	var html strings.Builder
 
