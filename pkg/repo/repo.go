@@ -7,6 +7,9 @@ import (
 )
 
 type Repo interface {
+	// 仓库类型
+	Type() RepoType
+
 	// 上传包
 	UploadPackage(ctx context.Context, repoName string, filename string, reader io.Reader) error
 

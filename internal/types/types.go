@@ -9,6 +9,7 @@ import (
 //go:generate easyjson -all types.go
 type RepoTable struct {
 	Name        string `json:"name"`
+	Type        string `json:"type"`        // 新增类型字段
 	Description string `json:"description"`
 	Path        string `json:"path"` // 新增路径字段，支持多层目录
 }
@@ -69,6 +70,7 @@ func (r *RepoMeta) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r,
 type TreeNode struct {
 	Type     string               `json:"type"`               // "repo" 或 "directory"
 	Path     string               `json:"path,omitempty"`     // 仅对 repo 类型有效
+	RepoType string               `json:"repoType,omitempty"`
 	Children map[string]*TreeNode `json:"children,omitempty"` // 仅对 directory 类型有效
 }
 
@@ -85,6 +87,7 @@ type PackageInfo struct {
 //go:generate easyjson -all types.go
 type RepoInfo struct {
 	Status       Status        `json:",inline"`
+	Type         string        `json:"type"`
 	Name         string        `json:"name"`
 	PackageCount int           `json:"package_count"`
 	RPMCount     int           `json:"rpm_count"`

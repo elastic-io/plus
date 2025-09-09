@@ -27,6 +27,10 @@ func NewDEBRepo(storage storage.Storage) repo.Repo {
 	}
 }
 
+func (r *DEBRepo) Type() repo.RepoType {
+	return repo.DEB
+}
+
 func (d *DEBRepo) UploadPackage(ctx context.Context, repoName string, filename string, reader io.Reader) error {
 	// 验证是否为 DEB 文件
 	if !strings.HasSuffix(filename, ".deb") {

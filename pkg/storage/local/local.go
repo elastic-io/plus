@@ -12,14 +12,18 @@ import (
 	"plus/pkg/storage"
 )
 
+func init() {
+	storage.Register(storage.Local, NewLocalStorage, "rpm", "deb")
+}
+
 type LocalStorage struct {
 	basePath string
 }
 
-func NewLocalStorage(basePath string) storage.Storage {
+func NewLocalStorage(basePath string) (storage.Storage, error) {
 	return &LocalStorage{
 		basePath: basePath,
-	}
+	}, nil
 }
 
 func (l *LocalStorage) Store(ctx context.Context, path string, reader io.Reader) error {

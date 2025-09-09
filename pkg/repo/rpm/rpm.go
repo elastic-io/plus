@@ -32,6 +32,10 @@ func NewRPMRepo(storage storage.Storage) repo.Repo {
 	}
 }
 
+func (r *RPMRepo) Type() repo.RepoType {
+	return repo.RPM
+}
+
 func (r *RPMRepo) UploadPackage(ctx context.Context, repoName string, filename string, reader io.Reader) error {
 	// 验证是否为 RPM 文件
 	if !strings.HasSuffix(filename, ".rpm") {
@@ -133,12 +137,12 @@ func (r *RPMRepo) ListRepos(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	log.Printf("Found %d files/directories from storage", len(files))
+	log.Printf("Found %d rpm/directories from storage", len(files))
 
 	repoSet := make(map[string]bool)
 
 	for _, file := range files {
-		log.Printf("Processing: %s, IsDir: %v", file.Name, file.IsDir)
+		//log.Printf("Processing: %s, IsDir: %v", file.Name, file.IsDir)
 
 		// 简单策略：
 		// 1. 如果目录直接标记为仓库，添加它
@@ -164,7 +168,7 @@ func (r *RPMRepo) ListRepos(ctx context.Context) ([]string, error) {
 		repos = append(repos, repo)
 	}
 
-	log.Printf("Final repos list: %v", repos)
+	log.Printf("Final rpm repos list: %v\n", repos)
 	return repos, nil
 }
 

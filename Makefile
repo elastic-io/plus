@@ -29,7 +29,7 @@ build-amd:
 build-arm:
 	@echo "Building $(PROJECT_NAME) for $(GOOS)/arm..."
 	@mkdir -p $(OUTPUT_DIR)
-	@GOOS=$(GOOS) GOARCH=arm $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-$(GOOS)-arm64 $(SRC_DIR)
+	@GOOS=$(GOOS) GOARCH=arm64 $(GO) build -ldflags "-X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT}" -o $(OUTPUT_BIN)-$(GOOS)-arm64 $(SRC_DIR)
 	@echo "Build completed: $(OUTPUT_BIN)-$(GOOS)-arm"
 
 build-all: build build-amd build-arm

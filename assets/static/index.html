@@ -68,7 +68,7 @@
             <section id="upload" class="upload-section">
                 <div class="section-header">
                     <h2>Upload Package</h2>
-                    <p>Upload RPM packages to your repositories</p>
+                    <p>Upload packages to your repositories</p>
                 </div>
                 <form id="uploadForm" enctype="multipart/form-data" class="modern-form">
                     <div class="form-group">
@@ -78,16 +78,17 @@
                         </select>
                     </div>
                    <div class="form-group">
-    <label for="file">RPM Package:</label>
+
+    <label for="file">Package:</label>
     <div class="file-upload-area" id="fileUploadArea">
-        <input type="file" id="file" name="file" accept=".rpm" required style="display: none;">
+        <input type="file" id="file" name="file" required style="display: none;">
         <div class="file-upload-content" id="fileUploadContent">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M21 15V19C21 19.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M7 10L12 5L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M12 5V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <p>Drop your RPM file here or <span class="browse-link">browse</span></p>
+            <p>Drop your Package file here or <span class="browse-link">browse</span></p>
             <div class="file-info" id="fileInfo" style="display: none;">
                 <span class="file-name" id="fileName"></span>
                 <span class="file-size" id="fileSize"></span>
@@ -107,6 +108,15 @@
         <p>Set up new package repositories with multi-level paths</p>
     </div>
     <form id="createRepoForm" class="modern-form">
+        <div class="form-group">
+            <label for="repoType">Repository Type:</label>
+            <select id="repoType" name="type" required>
+                <option value="">Select Type</option>
+                <option value="rpm">RPM Repository</option>
+                <option value="deb">DEB Repository</option>
+                <option value="files">Files Repository</option>
+            </select>
+        </div>
         <div class="form-group">
             <label for="repoName">Repository Name:</label>
             <input type="text" id="repoName" name="name" required placeholder="e.g., oe-release">

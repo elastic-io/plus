@@ -121,6 +121,8 @@ func easyjson6601e8cdDecodePlusInternalTypes1(in *jlexer.Lexer, out *TreeNode) {
 			out.Type = string(in.String())
 		case "path":
 			out.Path = string(in.String())
+		case "repoType":
+			out.RepoType = string(in.String())
 		case "children":
 			if in.IsNull() {
 				in.Skip()
@@ -172,6 +174,11 @@ func easyjson6601e8cdEncodePlusInternalTypes1(out *jwriter.Writer, in TreeNode) 
 		const prefix string = ",\"path\":"
 		out.RawString(prefix)
 		out.String(string(in.Path))
+	}
+	if in.RepoType != "" {
+		const prefix string = ",\"repoType\":"
+		out.RawString(prefix)
+		out.String(string(in.RepoType))
 	}
 	if len(in.Children) != 0 {
 		const prefix string = ",\"children\":"
@@ -424,6 +431,8 @@ func easyjson6601e8cdDecodePlusInternalTypes4(in *jlexer.Lexer, out *RepoTable) 
 		switch key {
 		case "name":
 			out.Name = string(in.String())
+		case "type":
+			out.Type = string(in.String())
 		case "description":
 			out.Description = string(in.String())
 		case "path":
@@ -446,6 +455,11 @@ func easyjson6601e8cdEncodePlusInternalTypes4(out *jwriter.Writer, in RepoTable)
 		const prefix string = ",\"name\":"
 		out.RawString(prefix[1:])
 		out.String(string(in.Name))
+	}
+	{
+		const prefix string = ",\"type\":"
+		out.RawString(prefix)
+		out.String(string(in.Type))
 	}
 	{
 		const prefix string = ",\"description\":"
@@ -738,6 +752,8 @@ func easyjson6601e8cdDecodePlusInternalTypes7(in *jlexer.Lexer, out *RepoInfo) {
 		switch key {
 		case "Status":
 			(out.Status).UnmarshalEasyJSON(in)
+		case "type":
+			out.Type = string(in.String())
 		case "name":
 			out.Name = string(in.String())
 		case "package_count":
@@ -789,6 +805,11 @@ func easyjson6601e8cdEncodePlusInternalTypes7(out *jwriter.Writer, in RepoInfo) 
 		const prefix string = ",\"Status\":"
 		out.RawString(prefix[1:])
 		(in.Status).MarshalEasyJSON(out)
+	}
+	{
+		const prefix string = ",\"type\":"
+		out.RawString(prefix)
+		out.String(string(in.Type))
 	}
 	{
 		const prefix string = ",\"name\":"
