@@ -5,11 +5,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 
 	"plus/internal/types"
+	"plus/internal/log"
 	"plus/pkg/repo"
 	"plus/pkg/storage"
 )
@@ -36,20 +36,20 @@ func (r *FilesRepo) UploadPackage(ctx context.Context, repoName string, filename
 	// Files 仓库接受任何类型的文件，直接存储到仓库根目录
 	path := filepath.Join(repoName, filename)
 
-	log.Printf("Uploading file to Files repo: %s -> %s", filename, path)
+	log.Logger.Debugf("Uploading file to Files repo: %s -> %s", filename, path)
 
 	if err := r.storage.Store(ctx, path, reader); err != nil {
 		return fmt.Errorf("failed to store file: %w", err)
 	}
 
-	log.Printf("Successfully uploaded file: %s", filename)
+	log.Logger.Debugf("Successfully uploaded file: %s", filename)
 	return nil
 }
 
 func (r *FilesRepo) DownloadPackage(ctx context.Context, repoName string, filename string) (io.ReadCloser, error) {
 	path := filepath.Join(repoName, filename)
 
-	log.Printf("Downloading file from Files repo: %s", path)
+	log.Logger.Debugf("Downloading file from Files repo: %s", path)
 
 	reader, err := r.storage.Get(ctx, path)
 	if err != nil {
@@ -61,18 +61,18 @@ func (r *FilesRepo) DownloadPackage(ctx context.Context, repoName string, filena
 
 func (r *FilesRepo) RefreshMetadata(ctx context.Context, repoName string) error {
 	// Files 仓库不需要元数据刷新，直接返回成功
-	log.Printf("RefreshMetadata called for Files repo: %s (no action needed)", repoName)
+	log.Logger.Debugf("RefreshMetadata called for Files repo: %s (no action needed)", repoName)
 	return nil
 }
 
 func (r *FilesRepo) GetMetadata(ctx context.Context, repoName string, filename string) (io.ReadCloser, error) {
 	// Files 仓库不维护元数据文件
-	log.Printf("GetMetadata called for Files repo: %s/%s (not supported)", repoName, filename)
+	log.Logger.Debugf("GetMetadata called for Files repo: %s/%s (not supported)", repoName, filename)
 	return nil, fmt.Errorf("metadata not supported for Files repository")
 }
 
 func (r *FilesRepo) ListPackages(ctx context.Context, repoName string) ([]types.PackageInfo, error) {
-	log.Printf("Listing files in Files repo: %s", repoName)
+	log.Logger.Debugf("Listing files in Files repo: %s", repoName)
 
 	// 列出仓库目录下的所有文件（递归）
 	files, err := r.storage.ListWithOptions(ctx, repoName, storage.ListOptions{
@@ -99,15 +99,15 @@ func (r *FilesRepo) ListPackages(ctx context.Context, repoName string) ([]types.
 		}
 		packages = append(packages, info)
 
-		log.Printf("Found file: %s (size: %d bytes)", relativePath, file.Size)
+		log.Logger.Debugf("Found file: %s (size: %d bytes)", relativePath, file.Size)
 	}
 
-	log.Printf("Listed %d files in Files repo: %s", len(packages), repoName)
+	log.Logger.Debugf("Listed %d files in Files repo: %s", len(packages), repoName)
 	return packages, nil
 }
 
 func (r *FilesRepo) CreateRepo(ctx context.Context, repoName string) error {
-	log.Printf("Creating Files repo: %s", repoName)
+	log.Logger.Debugf("Creating Files repo: %s", repoName)
 
 	// 创建仓库目录
 	if err := r.storage.CreateDir(ctx, repoName); err != nil {
@@ -118,27 +118,27 @@ func (r *FilesRepo) CreateRepo(ctx context.Context, repoName string) error {
 	markerPath := filepath.Join(repoName, ".repo-type")
 	markerContent := strings.NewReader("files")
 	if err := r.storage.Store(ctx, markerPath, markerContent); err != nil {
-		log.Printf("Warning: failed to create repo type marker: %v", err)
+		log.Logger.Debugf("Warning: failed to create repo type marker: %v", err)
 		// 不返回错误，因为这只是一个标记文件
 	}
 
-	log.Printf("Successfully created Files repo: %s", repoName)
+	log.Logger.Debugf("Successfully created Files repo: %s", repoName)
 	return nil
 }
 
 func (r *FilesRepo) DeleteRepo(ctx context.Context, repoName string) error {
-	log.Printf("Deleting Files repo: %s", repoName)
+	log.Logger.Debugf("Deleting Files repo: %s", repoName)
 
 	if err := r.storage.Delete(ctx, repoName); err != nil {
 		return fmt.Errorf("failed to delete Files repository: %w", err)
 	}
 
-	log.Printf("Successfully deleted Files repo: %s", repoName)
+	log.Logger.Debugf("Successfully deleted Files repo: %s", repoName)
 	return nil
 }
 
 func (r *FilesRepo) ListRepos(ctx context.Context) ([]string, error) {
-	log.Printf("Listing all Files repositories")
+	log.Logger.Debugf("Listing all Files repositories")
 
 	files, err := r.storage.ListWithOptions(ctx, "", storage.ListOptions{
 		MaxDepth:    -1,   // 递归搜索
@@ -149,25 +149,25 @@ func (r *FilesRepo) ListRepos(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("failed to list directories: %w", err)
 	}
 
-	log.Printf("Found %d files/directories from storage", len(files))
+	log.Logger.Debugf("Found %d files/directories from storage", len(files))
 
 	repoSet := make(map[string]bool)
 
 	for _, file := range files {
-		//log.Printf("Processing: %s, IsDir: %v, IsRepo: %v", file.Name, file.IsDir, file.IsRepo)
+		//log.Logger.Debugf("Processing: %s, IsDir: %v, IsRepo: %v", file.Name, file.IsDir, file.IsRepo)
 
 		if file.IsDir {
 			// 首先检查是否已经被标记为仓库
 			if file.IsRepo {
 				repoSet[file.Name] = true
-				log.Printf("Directory %s is marked as repo, adding to list", file.Name)
+				log.Logger.Debugf("Directory %s is marked as repo, adding to list", file.Name)
 				continue
 			}
 
 			// 检查是否有 .repo-type 标记文件
 			if r.hasRepoTypeMarker(ctx, file.Name, "files") {
 				repoSet[file.Name] = true
-				log.Printf("Directory %s has files repo marker, adding to list", file.Name)
+				log.Logger.Debugf("Directory %s has files repo marker, adding to list", file.Name)
 				continue
 			}
 		}
@@ -179,12 +179,12 @@ func (r *FilesRepo) ListRepos(ctx context.Context) ([]string, error) {
 		repos = append(repos, repo)
 	}
 
-	log.Printf("Final Files repos list: %v\n", repos)
+	log.Logger.Debugf("Final Files repos list: %v\n", repos)
 	return repos, nil
 }
 
 func (r *FilesRepo) GetPackageChecksum(ctx context.Context, repoName string, filename string) (string, error) {
-	log.Printf("Computing checksum for file: %s/%s", repoName, filename)
+	log.Logger.Debugf("Computing checksum for file: %s/%s", repoName, filename)
 
 	// 获取文件
 	path := filepath.Join(repoName, filename)
@@ -201,7 +201,7 @@ func (r *FilesRepo) GetPackageChecksum(ctx context.Context, repoName string, fil
 	}
 
 	checksum := fmt.Sprintf("%x", hasher.Sum(nil))
-	log.Printf("Computed SHA256 checksum for %s: %s", filename, checksum)
+	log.Logger.Debugf("Computed SHA256 checksum for %s: %s", filename, checksum)
 
 	return checksum, nil
 }
@@ -211,23 +211,23 @@ func (r *FilesRepo) hasRepoTypeMarker(ctx context.Context, dirPath, expectedType
 	// 确保路径格式正确
 	markerPath := filepath.Join(dirPath, ".repo-type")
 
-	log.Printf("Checking repo type marker at: %s", markerPath)
+	log.Logger.Debugf("Checking repo type marker at: %s", markerPath)
 
 	reader, err := r.storage.Get(ctx, markerPath)
 	if err != nil {
-		log.Printf("Failed to get repo type marker %s: %v", markerPath, err)
+		log.Logger.Debugf("Failed to get repo type marker %s: %v", markerPath, err)
 		return false
 	}
 	defer reader.Close()
 
 	content, err := io.ReadAll(reader)
 	if err != nil {
-		log.Printf("Failed to read repo type marker %s: %v", markerPath, err)
+		log.Logger.Debugf("Failed to read repo type marker %s: %v", markerPath, err)
 		return false
 	}
 
 	actualType := strings.TrimSpace(string(content))
-	log.Printf("Repo type marker content: '%s', expected: '%s'", actualType, expectedType)
+	log.Logger.Debugf("Repo type marker content: '%s', expected: '%s'", actualType, expectedType)
 
 	return actualType == expectedType
 }
@@ -276,19 +276,19 @@ func (r *FilesRepo) UploadToSubdir(ctx context.Context, repoName string, subdir 
 		// 确保子目录存在
 		subdirPath := filepath.Join(repoName, subdir)
 		if err := r.storage.CreateDir(ctx, subdirPath); err != nil {
-			log.Printf("Warning: failed to create subdir %s: %v", subdirPath, err)
+			log.Logger.Debugf("Warning: failed to create subdir %s: %v", subdirPath, err)
 		}
 	} else {
 		path = filepath.Join(repoName, filename)
 	}
 
-	log.Printf("Uploading file to Files repo with subdir: %s -> %s", filename, path)
+	log.Logger.Debugf("Uploading file to Files repo with subdir: %s -> %s", filename, path)
 
 	if err := r.storage.Store(ctx, path, reader); err != nil {
 		return fmt.Errorf("failed to store file: %w", err)
 	}
 
-	log.Printf("Successfully uploaded file to subdir: %s", filename)
+	log.Logger.Debugf("Successfully uploaded file to subdir: %s", filename)
 	return nil
 }
 

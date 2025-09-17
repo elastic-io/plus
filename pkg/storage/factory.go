@@ -2,7 +2,7 @@ package storage
 
 import (
 	"fmt"
-	"log"
+	"plus/internal/log"
 )
 
 type StorageType string
@@ -29,7 +29,6 @@ func Register(st StorageType, fn storageFn, labels ...string) {
 		fn:     fn,
 		labels: labels,
 	}
-	log.Println(factory)
 }
 
 func Create(storeType StorageType, path string) (Storage, error) {
@@ -47,7 +46,7 @@ func CreateByLable(path string, label string) (Storage, error) {
 			}
 		}
 	}
-	log.Println("label and storage not fount: ", label, Local, factory)
+	log.Logger.Debugf("label and storage not fount: %s, %s, %s", label, Local, factory)
 	if fn, ok := factory[Local]; ok {
 		return fn.fn(path)
 	}

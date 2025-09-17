@@ -8,28 +8,29 @@ import (
 
 type Config struct {
 	Listen       string                `yaml:"listen"`
-	StoragePath  string                `yaml:"storage_path"`
-	DatabasePath string                `yaml:"database_path"`
-	Debug        bool                  `yaml:"debug"`
+	StoragePath  string                `yaml:"storage-path"`
+	DatabasePath string                `yaml:"database-path"`
 	Auth         AuthConfig            `yaml:"auth"`
 	Cache        CacheConfig           `yaml:"cache"`
 	Repositories map[string]RepoConfig `yaml:"repositories"`
 	Limits       LimitsConfig          `yaml:"limits"`
 	Storage      StorageConfig         `yaml:"storage"`
-	DevMode      bool                  `yaml:"dev_mode"`
+	DevMode      bool                  `yaml:"dev-mode"`
+	Log          string                `yaml:"log"`
+	LogLevel     string                `yaml:"log-level"`
 }
 
 type AuthConfig struct {
 	Enabled         bool   `yaml:"enabled"`
 	Token           string `yaml:"token"`
-	APIKey          string `yaml:"api_key"`
-	RequireReadAuth bool   `yaml:"require_read_auth"`
+	APIKey          string `yaml:"api-key"`
+	RequireReadAuth bool   `yaml:"require-read-auth"`
 }
 
 type CacheConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	TTL     string `yaml:"ttl"`
-	MaxSize int    `yaml:"max_size"`
+	MaxSize int    `yaml:"max-size"`
 }
 
 type RepoConfig struct {
@@ -37,13 +38,13 @@ type RepoConfig struct {
 	Description string `yaml:"description"`
 	Type        string `yaml:"type"` // rpm, deb
 	Enabled     bool   `yaml:"enabled"`
-	AutoRefresh bool   `yaml:"auto_refresh"`
+	AutoRefresh bool   `yaml:"auto-refresh"`
 }
 
 type LimitsConfig struct {
-	MaxFileSize          int64 `yaml:"max_file_size"` // bytes
-	MaxConcurrentUploads int   `yaml:"max_concurrent_uploads"`
-	RateLimit            int   `yaml:"rate_limit"` // requests per minute
+	MaxFileSize          int64 `yaml:"max-file-size"` // bytes
+	MaxConcurrentUploads int   `yaml:"max-concurrent-uploads"`
+	RateLimit            int   `yaml:"rate-limit"` // requests per minute
 }
 
 type StorageConfig struct {

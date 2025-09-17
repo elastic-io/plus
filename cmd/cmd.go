@@ -29,9 +29,14 @@ func Execute(name, usage, version, commit string) {
 			Value: "./storage",
 			Usage: "Storage directory path",
 		},
-		&cli.BoolFlag{
-			Name:  "debug",
-			Usage: "Enable debug mode",
+		cli.StringFlag{
+			Name:  "log",
+			Usage: "set the log file to write plus logs to (default is '/dev/stderr')",
+		},
+		cli.StringFlag{
+			Name:  "log-level",
+			Value: "debug",
+			Usage: "set  the log level ('DEBUG/debug', 'INFO/info', 'WARN/warn', 'ERROR/error', 'FATAL/fatal')",
 		},
 	}
 	app.Action = App.Run

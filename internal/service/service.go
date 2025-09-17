@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 
+	"plus/internal/log"
 	"plus/internal/types"
 	"plus/pkg/repo"
 )
@@ -29,7 +29,7 @@ func NewRepoService(repos ...repo.Repo) *RepoService {
 	// 注册所有类型的 repo
 	for _, r := range repos {
 		rs.repos[r.Type()] = r
-		log.Printf("Registered repo type: %s", r.Type())
+		log.Logger.Debugf("Registered repo type: %s", r.Type())
 	}
 	
 	return rs
@@ -68,7 +68,7 @@ func (s *RepoService) getRepoInstance(repoName string) (repo.Repo, repo.RepoType
 func (s *RepoService) inferRepoType(repoName string) (repo.RepoType, error) {
 	// 尝试从不同类型的 repo 中查找
 	for repoType, repoInstance := range s.repos {
-		log.Printf("Checking repo type and instance: %s\n", repoType)
+		log.Logger.Debugf("Checking repo type and instance: %s\n", repoType)
 		repos, err := repoInstance.ListRepos(context.Background())
 		if err != nil {
 			continue
@@ -76,7 +76,7 @@ func (s *RepoService) inferRepoType(repoName string) (repo.RepoType, error) {
 		
 		for _, existingRepo := range repos {
 			if existingRepo == repoName {
-				log.Printf("Inferred repo type for %s: %s", repoName, repoType)
+				log.Logger.Debugf("Inferred repo type for %s: %s", repoName, repoType)
 				return repoType, nil
 			}
 		}
@@ -99,7 +99,7 @@ func (s *RepoService) UploadPackage(ctx context.Context, repoName string, filena
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	log.Printf("Uploading %s to %s repository: %s", filename, repoType, repoName)
+	log.Logger.Debugf("Uploading %s to %s repository: %s", filename, repoType, repoName)
 	return repoInstance.UploadPackage(ctx, repoName, filename, reader)
 }
 
@@ -111,8 +111,14 @@ func (s *RepoService) DownloadPackage(ctx context.Context, repoName string, file
 	
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	log.Logger.Debugf("Downloading %s from types %s", filename, repoInstance.Type())
 	
 	return repoInstance.DownloadPackage(ctx, repoName, filename)
+}
+
+func (s *RepoService) DownloadPackageFiles(ctx context.Context, repoName string, filename string) (io.ReadCloser, error) {
+	return s.repos[repo.Files].DownloadPackage(ctx, repoName, filename)
 }
 
 func (s *RepoService) RefreshMetadata(ctx context.Context, repoName string) error {
@@ -124,7 +130,7 @@ func (s *RepoService) RefreshMetadata(ctx context.Context, repoName string) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	log.Printf("Refreshing metadata for %s repository: %s", repoType, repoName)
+	log.Logger.Debugf("Refreshing metadata for %s repository: %s", repoType, repoName)
 	return repoInstance.RefreshMetadata(ctx, repoName)
 }
 
@@ -183,7 +189,7 @@ func (s *RepoService) CreateRepo(ctx context.Context, repoName string, repoTypeS
 	// 记录仓库类型
 	s.repoTypes[repoName] = repoType
 	
-	log.Printf("Created %s repository: %s", repoType, repoName)
+	log.Logger.Debugf("Created %s repository: %s", repoType, repoName)
 	return nil
 }
 
@@ -204,7 +210,7 @@ func (s *RepoService) DeleteRepo(ctx context.Context, repoName string) error {
 	delete(s.repoTypes, repoName)
 	delete(s.repoConfigs, repoName)
 	
-	log.Printf("Deleted repository: %s", repoName)
+	log.Logger.Debugf("Deleted repository: %s", repoName)
 	return nil
 }
 
@@ -216,10 +222,10 @@ func (s *RepoService) ListRepos(ctx context.Context) ([]string, error) {
 	
 	// 从所有类型的 repo 中收集仓库列表
 	for repoType, repoInstance := range s.repos {
-		log.Printf("Listing repos for type: %s\n", repoType)
+		log.Logger.Debugf("Listing repos for type: %s\n", repoType)
 		repos, err := repoInstance.ListRepos(ctx)
 		if err != nil {
-			log.Printf("Failed to list repos for type %s: %v\n", repoType, err)
+			log.Logger.Debugf("Failed to list repos for type %s: %v\n", repoType, err)
 			continue
 		}
 		

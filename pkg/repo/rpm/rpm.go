@@ -6,10 +6,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 
+	"plus/internal/log"
 	"plus/internal/types"
 	"plus/pkg/repo"
 	"plus/pkg/storage"
@@ -60,6 +60,15 @@ func (r *RPMRepo) DownloadPackage(ctx context.Context, repoName string, filename
 func (r *RPMRepo) RefreshMetadata(ctx context.Context, repoName string) error {
 	repoPath := r.storage.GetPath(repoName)
 
+	// 检查是否是符号链接，如果是则解析到实际路径
+	realPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		log.Logger.Warnf("Failed to resolve symlinks for %s: %v", repoPath, err)
+		realPath = repoPath
+	}
+	
+	log.Logger.Debugf("Repository path: %s -> %s", repoPath, realPath)
+
 	// 使用 createrepo 生成元数据
 	config := &createrepo.Config{
 		CompressAlgo:       "gz",
@@ -67,19 +76,20 @@ func (r *RPMRepo) RefreshMetadata(ctx context.Context, repoName string) error {
 		WriteConfig:        true,
 	}
 
-	var err error
-	if r.repo, err = createrepo.NewRepo(repoPath, config); err != nil {
-		return fmt.Errorf("failed to new repo: %w", err)
+	var err2 error
+	if r.repo, err2 = createrepo.NewRepo(realPath, config); err2 != nil {
+		return fmt.Errorf("failed to new repo: %w", err2)
 	}
 
-	sum, err := r.repo.Create()
-	if err != nil {
-		return fmt.Errorf("failed to create repo metadata: %w", err)
+	sum, err2 := r.repo.Create()
+	if err2 != nil {
+		return fmt.Errorf("failed to create repo metadata: %w", err2)
 	}
 
-	log.Printf("Repository metadata created for %s: %s", repoName, sum)
+	log.Logger.Debugf("Repository metadata created for %s: %s", repoName, sum)
 	return nil
 }
+
 
 func (r *RPMRepo) GetMetadata(ctx context.Context, repoName string, filename string) (io.ReadCloser, error) {
 	path := filepath.Join(repoName, "repodata", filename)
@@ -137,12 +147,12 @@ func (r *RPMRepo) ListRepos(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	log.Printf("Found %d rpm/directories from storage", len(files))
+	log.Logger.Debugf("Found %d rpm/directories from storage", len(files))
 
 	repoSet := make(map[string]bool)
 
 	for _, file := range files {
-		//log.Printf("Processing: %s, IsDir: %v", file.Name, file.IsDir)
+		//log.Logger.Debugf("Processing: %s, IsDir: %v", file.Name, file.IsDir)
 
 		// 简单策略：
 		// 1. 如果目录直接标记为仓库，添加它
@@ -168,7 +178,7 @@ func (r *RPMRepo) ListRepos(ctx context.Context) ([]string, error) {
 		repos = append(repos, repo)
 	}
 
-	log.Printf("Final rpm repos list: %v\n", repos)
+	log.Logger.Debugf("Final rpm repos list: %v\n", repos)
 	return repos, nil
 }
 
@@ -187,7 +197,7 @@ func (r *RPMRepo) GetPackageChecksum(ctx context.Context, repoName string, filen
 	// 获取完整路径
 	primaryPath := filepath.Join(repoName, "repodata", primaryFile)
 
-	log.Printf("Reading latest primary metadata from: %s", primaryPath)
+	log.Logger.Debugf("Reading latest primary metadata from: %s", primaryPath)
 
 	reader, err := r.storage.Get(ctx, primaryPath)
 	if err != nil {
@@ -210,18 +220,18 @@ func (r *RPMRepo) GetPackageChecksum(ctx context.Context, repoName string, filen
 
 	// 查找指定的包
 	targetFile := filepath.Base(filename)
-	log.Printf("Searching for package: %s in %d packages", targetFile, len(metadata.Packages))
+	log.Logger.Debugf("Searching for package: %s in %d packages", targetFile, len(metadata.Packages))
 
 	for _, pkg := range metadata.Packages {
 		locationFile := filepath.Base(pkg.Location.Href)
-		log.Printf("Checking package: %s (location: %s)", pkg.Name, pkg.Location.Href)
+		log.Logger.Debugf("Checking package: %s (location: %s)", pkg.Name, pkg.Location.Href)
 
 		if locationFile == targetFile {
 			if pkg.Checksum.Type == "sha256" {
-				log.Printf("Found SHA256 checksum for %s: %s", filename, pkg.Checksum.Value)
+				log.Logger.Debugf("Found SHA256 checksum for %s: %s", filename, pkg.Checksum.Value)
 				return pkg.Checksum.Value, nil
 			} else {
-				log.Printf("Found package but checksum type is %s, not sha256", pkg.Checksum.Type)
+				log.Logger.Debugf("Found package but checksum type is %s, not sha256", pkg.Checksum.Type)
 			}
 		}
 	}
@@ -249,7 +259,7 @@ func (r *RPMRepo) findLatestPrimaryXMLFile(ctx context.Context, repoName string)
 		fileName := filepath.Base(file.Name)
 		if strings.HasSuffix(fileName, "-primary.xml.gz") {
 			primaryFiles = append(primaryFiles, file)
-			log.Printf("Found primary file: %s, modified: %v", fileName, file.ModTime)
+			log.Logger.Debugf("Found primary file: %s, modified: %v", fileName, file.ModTime)
 		}
 	}
 
@@ -266,7 +276,7 @@ func (r *RPMRepo) findLatestPrimaryXMLFile(ctx context.Context, repoName string)
 	}
 
 	latestFileName := filepath.Base(latestFile.Name)
-	log.Printf("Using latest primary file: %s (modified: %v)", latestFileName, latestFile.ModTime)
+	log.Logger.Debugf("Using latest primary file: %s (modified: %v)", latestFileName, latestFile.ModTime)
 
 	return latestFileName, nil
 }

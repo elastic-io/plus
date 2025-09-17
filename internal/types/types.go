@@ -1,9 +1,9 @@
 package types
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"io"
-	"plus/internal/utils"
 )
 
 //go:generate easyjson -all types.go
@@ -29,7 +29,7 @@ type BatchUploadResponse struct {
 	Results []BatchUploadResult `json:"results"`
 }
 
-func (r *BatchUploadResponse) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *BatchUploadResponse) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type BatchUploadResult struct {
@@ -46,7 +46,7 @@ type Status struct {
 	Code    int    `json:"code"`
 }
 
-func (r *Status) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *Status) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type RepoStatus struct {
@@ -54,7 +54,7 @@ type RepoStatus struct {
 	Repo   string `json:"repo"`
 }
 
-func (r *RepoStatus) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *RepoStatus) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type RepoMeta struct {
@@ -64,7 +64,7 @@ type RepoMeta struct {
 	Count        int                  `json:"count"`
 }
 
-func (r *RepoMeta) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *RepoMeta) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type TreeNode struct {
@@ -96,7 +96,7 @@ type RepoInfo struct {
 	Packages     []PackageInfo `json:"packages"`
 }
 
-func (r *RepoInfo) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *RepoInfo) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type Metrics struct {
@@ -105,7 +105,7 @@ type Metrics struct {
 	Memory      Memory      `json:"memory"`
 }
 
-func (r *Metrics) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *Metrics) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type Performance struct {
@@ -136,7 +136,7 @@ type ReadyCheck struct {
 	Checks Checks `json:"checks"`
 }
 
-func (r *ReadyCheck) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(r, w) }
+func (r *ReadyCheck) WriteTo(w io.Writer) (int64, error) { return WriteTo(r, w) }
 
 //go:generate easyjson -all types.go
 type PackageChecksum struct {
@@ -146,7 +146,7 @@ type PackageChecksum struct {
 	Repo     string `json:"repo"`
 }
 
-func (pc *PackageChecksum) WriteTo(w io.Writer) (int64, error) { return utils.WriteTo(pc, w) }
+func (pc *PackageChecksum) WriteTo(w io.Writer) (int64, error) { return WriteTo(pc, w) }
 
 //go:generate easyjson -all types.go
 type Checks struct {
@@ -181,3 +181,16 @@ type Checksum struct {
 type Location struct {
 	Href string `xml:"href,attr"`
 }
+
+func WriteTo(m json.Marshaler, w io.Writer) (int64, error) {
+	b, err := m.MarshalJSON()
+	if err != nil {
+		return -1, err
+	}
+	n, err := w.Write(b)
+	if err != nil {
+		return int64(n), err
+	}
+	return int64(n), nil
+}
+

@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+
 	"mime/multipart"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
-	"time"
 
 	"plus/assets"
 	"plus/internal/config"
+	"plus/internal/log"
 	"plus/internal/metrics"
 	"plus/internal/middleware"
 	"plus/internal/service"
@@ -55,27 +55,27 @@ func (h *API) RefreshRepo(ctx *fasthttp.RequestCtx) {
 		ctx.Error("Repository path is required", fasthttp.StatusBadRequest)
 		return
 	}
-
-	log.Printf("🔄 Refreshing repository: %s", repoPath)
+	
+	log.Logger.Debugf("🔄 Refreshing repository: %s", repoPath)
 
 	// 检查仓库类型
 	repoType, err := h.repoService.GetRepoType(ctx, repoPath)
 	if err != nil {
-		log.Printf("Failed to get repository type for %s: %v", repoPath, err)
+		log.Logger.Debugf("Failed to get repository type for %s: %v", repoPath, err)
 		h.sendJSONError(ctx, "Repository not found", fasthttp.StatusNotFound)
 		return
 	}
 
 	// Files 类型仓库不需要刷新元数据
 	if repoType == "files" {
-		log.Printf("Repository %s is files type, no metadata refresh needed", repoPath)
+		log.Logger.Debugf("Repository %s is files type, no metadata refresh needed", repoPath)
 		h.sendJSONError(ctx, "Files repositories do not require metadata refresh", fasthttp.StatusBadRequest)
 		return
 	}
 
 	err = h.repoService.RefreshMetadata(ctx, repoPath)
 	if err != nil {
-		log.Printf("Refresh metadata failed for repo %s: %v", repoPath, err)
+		log.Logger.Debugf("Refresh metadata failed for repo %s: %v", repoPath, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Refresh failed: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
@@ -97,7 +97,7 @@ func (h *API) sendJSONResponse(ctx *fasthttp.RequestCtx, data io.WriterTo, statu
 	ctx.SetStatusCode(statusCode)
 
 	if _, err := data.WriteTo(ctx); err != nil {
-		log.Printf("Failed to encode JSON response: %v", err)
+		log.Logger.Debugf("Failed to encode JSON response: %v", err)
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(`{"status":"error","message":"Internal server error"}`)
 	}
@@ -115,7 +115,7 @@ func (h *API) sendJSONError(ctx *fasthttp.RequestCtx, message string, statusCode
 	ctx.SetStatusCode(statusCode)
 
 	if _, err := response.WriteTo(ctx); err != nil {
-		log.Printf("Failed to encode JSON error response: %v", err)
+		log.Logger.Debugf("Failed to encode JSON error response: %v", err)
 		ctx.SetBodyString(fmt.Sprintf(`{"status":"error","message":"%s"}`, message))
 	}
 }
@@ -209,23 +209,23 @@ func SetupRouter(h *API) fasthttp.RequestHandler {
 	if h.config != nil && h.config.DevMode {
 		// 开发模式：使用外部文件
 		staticHandler = createExternalStaticHandler("./static")
-		log.Println("Using external static files (development mode)")
+		log.Logger.Info("Using external static files (development mode)")
 	} else {
 		// 生产模式：使用嵌入文件
 		staticHandler = createEmbeddedStaticHandler()
-		log.Println("Using embedded static files (production mode)")
+		log.Logger.Info("Using embedded static files (production mode)")
 	}
 
 	repoHandler := createRepoHandler(h.config.StoragePath)
 
 	return middleware.CORSMiddleware(
 		middleware.LoggingMiddleware(
-			metricsMiddleware(
+			middleware.MetricsMiddleware(
 				func(ctx *fasthttp.RequestCtx) {
 					path := string(ctx.Path())
 					method := string(ctx.Method())
 
-					log.Printf("🔍 Request: %s %s", method, path)
+					log.Logger.Debugf("🔍 Request: %s %s", method, path)
 
 					// 1. Web UI 静态文件服务
 					if method == "GET" && strings.HasPrefix(path, "/static/") {
@@ -256,7 +256,7 @@ func SetupRouter(h *API) fasthttp.RequestHandler {
 					}
 
 					// 6. 直接路径浏览 - 只处理 files 类型仓库
-					if method == "GET" && handleDirectBrowse(ctx, path, h) {
+					if method == "GET" && h.handleDirectFileSystemAccess(ctx, path) {
 						return
 					}
 
@@ -274,164 +274,171 @@ func SetupRouter(h *API) fasthttp.RequestHandler {
 	)
 }
 
-func (h *API) isObjectStorage(repoType string) bool {
-	switch repoType {
-	case "files":
-		return true  // files 类型使用对象存储
-	case "rpm", "deb":
-		return false // rpm 和 deb 类型使用本地存储
-	default:
-		return false // 默认本地存储
-	}
-}
-/*
-func handleDirectBrowse(ctx *fasthttp.RequestCtx, path string, h *API) bool {
-	// 排除特殊路径
-	if path == "/" || strings.HasPrefix(path, "/static/") || 
-	   strings.HasPrefix(path, "/health") ||
-	   strings.HasPrefix(path, "/ready") || strings.HasPrefix(path, "/metrics") ||
-	   strings.HasPrefix(path, "/repos") {
-		return false
-	}
+func (h *API) handleDirectFileSystemAccess(ctx *fasthttp.RequestCtx, path string) bool {
+    // 排除特殊路径
+    if path == "/" || strings.HasPrefix(path, "/static/") || 
+       strings.HasPrefix(path, "/health") ||
+       strings.HasPrefix(path, "/ready") || 
+       strings.HasPrefix(path, "/metrics") ||
+       strings.HasPrefix(path, "/repos") ||
+       strings.HasPrefix(path, "/repo/") { // 排除 /repo/ 开头的路径
+        return false
+    }
 
-	// 排除所有 /repo/ 开头的路径，这些由原有逻辑处理
-	if strings.HasPrefix(path, "/repo/") {
-		return false
-	}
-
-    // 移除前导斜杠
     cleanPath := strings.TrimPrefix(path, "/")
     if cleanPath == "" {
         return false
     }
 
-    log.Printf("🔍 Direct browse attempt: cleanPath=%s", cleanPath)
+    log.Logger.Debugf("🔍 Direct filesystem access attempt: %s", cleanPath)
 
-    // 检查是否是仓库路径
-    repos, err := h.repoService.ListRepos(ctx)
-    if err != nil {
-        log.Printf("❌ Failed to get repos for path matching: %v", err)
-        return false
-    }
-
-    // 查找匹配的仓库路径
-    var matchedRepo string
-    var remainingPath string
+    // 🔥 新增：先尝试本地文件系统（保持原有性能）
+    fullPath := filepath.Join(h.config.StoragePath, cleanPath)
     
-    for _, repo := range repos {
-        if cleanPath == repo {
-            matchedRepo = repo
-            remainingPath = ""
-            break
-        } else if strings.HasPrefix(cleanPath, repo+"/") {
-            matchedRepo = repo
-            remainingPath = strings.TrimPrefix(cleanPath, repo+"/")
-            break
+    if info, err := os.Stat(fullPath); err == nil {
+        log.Logger.Debugf("✅ Direct filesystem access: %s", fullPath)
+        
+        if info.IsDir() {
+            // 智能目录处理
+            h.handleSmartDirectoryListing(ctx, cleanPath, fullPath)
+        } else {
+            // 文件处理
+            h.handleDirectFileServe(ctx, cleanPath, fullPath)
         }
+        return true
     }
+    
+    // 🔥 新增：本地文件系统失败后，尝试对象存储
+    log.Logger.Debugf("❌ Path not found in local filesystem: %s", fullPath)
+    log.Logger.Debugf("🔍 Trying object storage for: %s", cleanPath)
+    
+    return h.tryObjectStorageAccess(ctx, cleanPath)
+}
 
-    if matchedRepo == "" {
-        log.Printf("❌ No matching repository found for path: %s", cleanPath)
+func (h *API) tryObjectStorageAccess(ctx *fasthttp.RequestCtx, cleanPath string) bool {
+    log.Logger.Debugf("🔍 Checking object storage access for path: %s", cleanPath)
+
+    keyword := strings.TrimPrefix(filepath.Clean(h.config.StoragePath), "/")
+    
+    if !strings.Contains(cleanPath, keyword) {
+        log.Logger.Debugf("❌ Not a files repository (missing %s): %s", keyword, cleanPath)
         return false
     }
+    
+    log.Logger.Debugf("✅ Detected files repository path, attempting direct access: %s", cleanPath)
+    
+    return h.handleObjectStorageFile(ctx, "", cleanPath)
+}
 
-    // 新增：如果是精确的仓库路径且Accept头包含JSON，返回API响应
-    if remainingPath == "" {
-        accept := string(ctx.Request.Header.Peek("Accept"))
-        if strings.Contains(accept, "application/json") {
-            log.Printf("🔍 Direct repo info API: repo=%s", matchedRepo)
-            h.GetRepoInfo(ctx, matchedRepo)
+func (h *API) tryAccessRepository(ctx *fasthttp.RequestCtx, repoName, filePath string) bool {
+    log.Logger.Debugf("🔍 Attempting to access repo=%s, file=%s", repoName, filePath)
+    
+    if filePath == "" {
+        // 尝试目录访问
+        if h.handleObjectStorageDirectory(ctx, repoName, repoName) {
+            log.Logger.Debugf("✅ Successfully accessed directory for repo: %s", repoName)
+            return true
+        }
+    } else {
+        // 尝试文件访问
+        if h.handleObjectStorageFile(ctx, repoName, filePath) {
+            log.Logger.Debugf("✅ Successfully accessed file: repo=%s, file=%s", repoName, filePath)
             return true
         }
     }
+    
+    log.Logger.Debugf("❌ Failed to access repo=%s, file=%s", repoName, filePath)
+    return false
+}
 
-    // 获取仓库类型
-    repoType, err := h.repoService.GetRepoType(ctx, matchedRepo)
+func (h *API) handleObjectStorageDirectory(ctx *fasthttp.RequestCtx, repoName, displayPath string) bool {
+    log.Logger.Debugf("🔍 Object storage directory: repo=%s", repoName)
+
+    // 使用仓库服务获取文件列表
+    packages, err := h.repoService.ListPackages(ctx, repoName)
     if err != nil {
-        log.Printf("❌ Failed to get repo type for %s: %v", matchedRepo, err)
-        repoType = "unknown"
+        log.Logger.Debugf("❌ Failed to list packages for repo %s: %v", repoName, err)
+        ctx.Error("Failed to access repository", fasthttp.StatusInternalServerError)
+        return true
     }
 
-    log.Printf("✅ Matched repository: %s (type: %s), remaining path: %s", matchedRepo, repoType, remainingPath)
+    // 生成对象存储的目录列表HTML
+    h.generateObjectStorageDirectoryHTML(ctx, repoName, displayPath, packages)
+    return true
+}
 
-    // 根据仓库类型选择存储方式
-    if h.isObjectStorage(repoType) {
-        // 对象存储：使用仓库服务
-        return h.handleObjectStorageBrowse(ctx, matchedRepo, remainingPath)
+// 🔥 新增：处理对象存储文件
+func (h *API) handleObjectStorageFile(ctx *fasthttp.RequestCtx, repoName, filePath string) bool {
+    log.Logger.Debugf("🔍 Object storage file: repo=%s, path=%s", repoName, filePath)
+
+    // 尝试下载文件
+    reader, err := h.repoService.DownloadPackageFiles(ctx, repoName, filePath)
+    if err != nil {
+        log.Logger.Debugf("❌ Object storage file not found: repo=%s, path=%s, error=%v", repoName, filePath, err)
+        ctx.Error("File not found", fasthttp.StatusNotFound)
+        return true
+    }
+    defer reader.Close()
+
+    // 设置适当的 Content-Type
+    contentType := utils.GetContentTypeByExtension(filePath)
+    ctx.Response.Header.Set("Content-Type", contentType)
+    
+    // 设置文件名
+    filename := filepath.Base(filePath)
+    ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+    
+    ctx.SetBodyStream(reader, -1)
+    return true
+}
+
+func (h *API) generateObjectStorageDirectoryHTML(ctx *fasthttp.RequestCtx, repoName, displayPath string, packages []types.PackageInfo) {
+    ctx.SetContentType("text/html; charset=utf-8")
+    ctx.SetBodyString(utils.GenerateObjectStorageDirectoryHTML(repoName, displayPath, packages))
+}
+
+func (h *API) handleSmartDirectoryListing(ctx *fasthttp.RequestCtx, cleanPath, fullPath string) {
+    // 快速检查是否为仓库目录（不遍历所有仓库）
+    repoType := utils.DetectRepoTypeByPath(fullPath)
+    
+    log.Logger.Debugf("🔍 Detected repo type for %s: %s", cleanPath, repoType)
+    
+    if repoType != "unknown" {
+        // 是仓库目录，生成增强的HTML
+        h.generateEnhancedDirectoryHTML(ctx, cleanPath, fullPath, repoType)
     } else {
-        // 本地存储：使用文件系统
-        return h.handleLocalStorageBrowse(ctx, matchedRepo, remainingPath, cleanPath)
+        // 普通目录，使用基本HTML
+        handleDirectoryListingNew(ctx, cleanPath, fullPath)
     }
 }
-*/
 
-func handleDirectBrowse(ctx *fasthttp.RequestCtx, path string, h *API) bool {
-	// 排除特殊路径
-	if path == "/" || strings.HasPrefix(path, "/static/") || 
-	   strings.HasPrefix(path, "/health") ||
-	   strings.HasPrefix(path, "/ready") || strings.HasPrefix(path, "/metrics") ||
-	   strings.HasPrefix(path, "/repos") {
-		return false
-	}
-
-	// 排除所有 /repo/ 开头的路径，这些由原有逻辑处理
-	if strings.HasPrefix(path, "/repo/") {
-		return false
-	}
-
-	// 移除前导斜杠
-	cleanPath := strings.TrimPrefix(path, "/")
-	if cleanPath == "" {
-		return false
-	}
-
-	log.Printf("🔍 Direct browse attempt: cleanPath=%s", cleanPath)
-
-	// 检查是否是仓库路径
-	repos, err := h.repoService.ListRepos(ctx)
+func (h *API) generateEnhancedDirectoryHTML(ctx *fasthttp.RequestCtx, cleanPath, fullPath, repoType string) {
+	str ,err := utils.GenerateEnhancedDirectoryHTML(cleanPath, fullPath, repoType)
 	if err != nil {
-		log.Printf("❌ Failed to get repos for path matching: %v", err)
-		return false
+		ctx.Error(err.Error(), fasthttp.StatusInternalServerError)
+		return
 	}
+    ctx.SetContentType("text/html; charset=utf-8")
+    ctx.SetBodyString(str)
+}
 
-	// 查找匹配的仓库路径
-	var matchedRepo string
-	var remainingPath string
-	
-	for _, repo := range repos {
-		if cleanPath == repo {
-			matchedRepo = repo
-			remainingPath = ""
-			break
-		} else if strings.HasPrefix(cleanPath, repo+"/") {
-			matchedRepo = repo
-			remainingPath = strings.TrimPrefix(cleanPath, repo+"/")
-			break
-		}
-	}
-
-	if matchedRepo == "" {
-		log.Printf("❌ No matching repository found for path: %s", cleanPath)
-		return false
-	}
-
-	// 获取仓库类型
-	repoType, err := h.repoService.GetRepoType(ctx, matchedRepo)
-	if err != nil {
-		log.Printf("❌ Failed to get repo type for %s: %v", matchedRepo, err)
-		repoType = "unknown"
-	}
-
-	log.Printf("✅ Matched repository: %s (type: %s), remaining path: %s", matchedRepo, repoType, remainingPath)
-
-	// 根据仓库类型选择存储方式
-	if h.isObjectStorage(repoType) {
-		// 对象存储：使用仓库服务
-		return h.handleObjectStorageBrowse(ctx, matchedRepo, remainingPath)
-	} else {
-		// 本地存储：使用文件系统
-		return h.handleLocalStorageBrowse(ctx, matchedRepo, remainingPath, cleanPath)
-	}
+func (h *API) handleDirectFileServe(ctx *fasthttp.RequestCtx, cleanPath, fullPath string) {
+    // 设置正确的 Content-Type
+    if strings.Contains(cleanPath, "repodata/") {
+        filename := filepath.Base(cleanPath)
+        contentType := utils.GetContentType(filename)
+        ctx.Response.Header.Set("Content-Type", contentType)
+        ctx.Response.Header.Set("Cache-Control", "public, max-age=300")
+    }
+    
+    // 对于包文件，设置下载头
+    filename := filepath.Base(cleanPath)
+    if strings.HasSuffix(filename, ".rpm") || strings.HasSuffix(filename, ".deb") {
+        ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+        metrics.IncrementDownloads()
+    }
+    
+    fasthttp.ServeFile(ctx, fullPath)
 }
 
 // 新增：处理对象存储浏览
@@ -459,11 +466,11 @@ func (h *API) handleLocalStorageBrowse(ctx *fasthttp.RequestCtx, repoName, remai
 	// 检查路径是否存在
 	info, err := os.Stat(storagePath)
 	if err != nil {
-		log.Printf("❌ Storage path not found: %s, error: %v", storagePath, err)
+		log.Logger.Debugf("❌ Storage path not found: %s, error: %v", storagePath, err)
 		return false
 	}
 
-	log.Printf("✅ Local storage browse: repo=%s, path=%s, storage=%s", repoName, remainingPath, storagePath)
+	log.Logger.Debugf("✅ Local storage browse: repo=%s, path=%s, storage=%s", repoName, remainingPath, storagePath)
 
 	if info.IsDir() {
 		// 目录浏览 - 使用原有的目录列表函数
@@ -478,424 +485,20 @@ func (h *API) handleLocalStorageBrowse(ctx *fasthttp.RequestCtx, repoName, remai
 
 // 新增：处理对象存储仓库列表
 func (h *API) handleObjectStorageRepoList(ctx *fasthttp.RequestCtx, repoName string) {
-	log.Printf("🔍 Object storage repository browse: repo=%s", repoName)
+	log.Logger.Debugf("🔍 Object storage repository browse: repo=%s", repoName)
 
 	// 使用仓库服务获取包列表
 	packages, err := h.repoService.ListPackages(ctx, repoName)
 	if err != nil {
-		log.Printf("❌ Failed to list packages for repo %s: %v", repoName, err)
+		log.Logger.Debugf("❌ Failed to list packages for repo %s: %v", repoName, err)
 		ctx.Error("Failed to access repository", fasthttp.StatusInternalServerError)
 		return
 	}
 
 	// 构建简单的文件列表HTML
-	html := h.generateObjectStorageRepoHTML(repoName, packages)
+	html := utils.GenerateObjectStorageRepoHTML(repoName, packages)
 	ctx.SetContentType("text/html; charset=utf-8")
 	ctx.SetBodyString(html)
-}
-
-// 新增：处理对象存储文件访问
-func (h *API) handleObjectStorageFile(ctx *fasthttp.RequestCtx, repoName, filePath string) {
-	log.Printf("🔍 Object storage file access: repo=%s, path=%s", repoName, filePath)
-
-	// 尝试下载文件
-	reader, err := h.repoService.DownloadPackage(ctx, repoName, filePath)
-	if err != nil {
-		log.Printf("❌ File not found: repo=%s, path=%s, error=%v", repoName, filePath, err)
-		ctx.Error("File not found", fasthttp.StatusNotFound)
-		return
-	}
-	defer reader.Close()
-
-	// 设置适当的 Content-Type
-	contentType := h.getContentTypeByExtension(filePath)
-	ctx.Response.Header.Set("Content-Type", contentType)
-	
-	// 设置文件名
-	filename := filepath.Base(filePath)
-	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	
-	ctx.SetBodyStream(reader, -1)
-}
-
-// 新增：生成对象存储仓库HTML
-func (h *API) generateObjectStorageRepoHTML(repoName string, packages []types.PackageInfo) string {
-	var html strings.Builder
-
-	currentPath := "/" + repoName
-
-	html.WriteString(fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Repository: %s</title>
-    <style>
-        body { font-family: monospace; margin: 20px; }
-        h1 { border-bottom: 1px solid #ccc; }
-        .file-list { list-style: none; padding: 0; }
-        .file-list li { padding: 5px 0; }
-        .file-list a { text-decoration: none; color: #0066cc; }
-        .file-list a:hover { text-decoration: underline; }
-        .parent { color: #999; }
-        .file-info { display: flex; justify-content: space-between; align-items: center; }
-        .file-name { flex: 1; }
-        .file-meta { color: #666; font-size: 0.9em; }
-    </style>
-</head>
-<body>
-    <h1>📁 Repository: %s</h1>
-    <ul class="file-list">`, repoName, repoName))
-
-	// 父目录链接
-	html.WriteString(`        <li><a href="/repo/" class="parent">../</a></li>`)
-
-	// 添加文件
-	for _, pkg := range packages {
-		linkPath := fmt.Sprintf("%s/%s", currentPath, pkg.Name)
-		size := formatFileSize(pkg.Size)
-		icon := getFileIcon(pkg.Name)
-
-		html.WriteString(fmt.Sprintf(`        <li>
-			<div class="file-info">
-				<div class="file-name"><a href="%s">%s %s</a></div>
-				<div class="file-meta">%s</div>
-			</div>
-		</li>`, linkPath, icon, pkg.Name, size))
-	}
-
-	html.WriteString(`    </ul>
-    <hr>
-    <p><em>Generated by Plus Artifacts Server</em></p>
-</body>
-</html>`)
-
-	return html.String()
-}
-
-// 新增：获取文件类型
-func (h *API) getContentTypeByExtension(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".txt", ".log":
-		return "text/plain; charset=utf-8"
-	case ".json":
-		return "application/json"
-	case ".xml":
-		return "application/xml"
-	case ".rpm":
-		return "application/x-rpm"
-	case ".deb":
-		return "application/vnd.debian.binary-package"
-	case ".gz":
-		return "application/gzip"
-	case ".zip":
-		return "application/zip"
-	case ".sql":
-		return "text/plain; charset=utf-8"
-	default:
-		return "application/octet-stream"
-	}
-}
-
-func handleDirectoryListingNew(ctx *fasthttp.RequestCtx, repoPath, fullPath string) {
-	log.Printf("🔍 Direct directory listing: repoPath=%s, fullPath=%s", repoPath, fullPath)
-
-	entries, err := os.ReadDir(fullPath)
-	if err != nil {
-		log.Printf("❌ Cannot read directory %s: %v", fullPath, err)
-		ctx.Error("Cannot read directory", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("📁 Found %d entries in directory %s", len(entries), fullPath)
-
-	// 生成新的 HTML 目录列表
-	html := generateDirectoryHTMLNew(repoPath, entries)
-
-	ctx.SetContentType("text/html; charset=utf-8")
-	ctx.SetBodyString(html)
-}
-
-func generateDirectoryHTMLNew(repoPath string, entries []os.DirEntry) string {
-	var html strings.Builder
-
-	currentPath := "/" + repoPath
-
-	html.WriteString(fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Index of %s</title>
-    <style>
-        body { font-family: monospace; margin: 20px; }
-        h1 { border-bottom: 1px solid #ccc; }
-        .file-list { list-style: none; padding: 0; }
-        .file-list li { padding: 5px 0; }
-        .file-list a { text-decoration: none; color: #0066cc; }
-        .file-list a:hover { text-decoration: underline; }
-        .dir { font-weight: bold; }
-        .size { color: #666; margin-left: 20px; }
-        .parent { color: #999; }
-        .file-info { display: flex; justify-content: space-between; align-items: center; }
-        .file-name { flex: 1; }
-        .file-meta { color: #666; font-size: 0.9em; }
-    </style>
-</head>
-<body>
-    <h1>📁 Repository: %s</h1>
-    <ul class="file-list">`, currentPath, repoPath))
-
-	// 父目录链接
-	var parentPath string
-	parts := strings.Split(strings.Trim(repoPath, "/"), "/")
-	if len(parts) > 1 {
-		// 返回上一级
-		parentParts := parts[:len(parts)-1]
-		parentPath = "/" + strings.Join(parentParts, "/")
-	} else {
-		// 返回仓库列表
-		parentPath = "/repo/"
-	}
-
-	html.WriteString(fmt.Sprintf(`        <li><a href="%s" class="parent">../</a></li>`, parentPath))
-
-	// 添加文件和目录
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		name := entry.Name()
-
-		if entry.IsDir() {
-			linkPath := fmt.Sprintf("%s/%s", currentPath, name)
-			html.WriteString(fmt.Sprintf(`        <li>
-				<div class="file-info">
-					<div class="file-name"><a href="%s" class="dir">📁 %s/</a></div>
-					<div class="file-meta">Directory</div>
-				</div>
-			</li>`, linkPath, name))
-		} else {
-			linkPath := fmt.Sprintf("%s/%s", currentPath, name)
-			size := formatFileSize(info.Size())
-			icon := getFileIcon(name)
-			modTime := info.ModTime().Format("2006-01-02 15:04:05")
-
-			html.WriteString(fmt.Sprintf(`        <li>
-				<div class="file-info">
-					<div class="file-name"><a href="%s">%s %s</a></div>
-					<div class="file-meta">%s | %s</div>
-				</div>
-			</li>`, linkPath, icon, name, size, modTime))
-		}
-	}
-
-	html.WriteString(`    </ul>
-    <hr>
-    <p><em>Generated by Plus Artifacts Server</em></p>
-</body>
-</html>`)
-
-	return html.String()
-}
-
-// 修改 generateRepoListHTML 函数，需要传入仓库类型信息
-func (h *API) generateRepoListHTMLWithTypes(repos []string) string {
-	var html strings.Builder
-
-	html.WriteString(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Repository List</title>
-    <style>
-        body { font-family: monospace; margin: 20px; }
-        h1 { border-bottom: 1px solid #ccc; color: #333; }
-        .repo-list { list-style: none; padding: 0; }
-        .repo-list li { padding: 10px 0; border-bottom: 1px solid #eee; }
-        .repo-list a { text-decoration: none; color: #0066cc; font-size: 16px; }
-        .repo-list a:hover { text-decoration: underline; }
-        .repo-item { display: flex; justify-content: space-between; align-items: center; }
-        .repo-name { font-weight: bold; }
-        .repo-links { font-size: 14px; }
-        .repo-links a { margin-left: 10px; color: #666; }
-        .repo-links button { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
-        .back-link { margin-bottom: 20px; }
-        .back-link a { color: #999; }
-    </style>
-</head>
-<body>
-    <div class="back-link">
-        <a href="/">← Back to Home</a>
-    </div>
-    <h1>📁 All Repositories</h1>
-    <ul class="repo-list">`)
-	
-	if len(repos) == 0 {
-		html.WriteString(`        <li>No repositories found.</li>`)
-	} else {
-		for _, repo := range repos {
-			// 获取仓库类型
-			repoType, err := h.repoService.GetRepoType(context.Background(), repo)
-			if err != nil {
-				repoType = "unknown"
-			}
-			
-			// 根据类型决定是否显示 refresh 按钮
-			refreshButton := ""
-			if repoType != "files" {
-				refreshButton = fmt.Sprintf(`<button onclick="refreshRepo('%s')">Refresh</button>`, repo)
-			}
-			
-			typeIcon := h.getRepoTypeIcon(repoType)
-			
-			html.WriteString(fmt.Sprintf(`
-        <li>
-            <div class="repo-item">
-                <div>
-                    <a href="/%s" class="repo-name">%s %s (%s)</a>
-                </div>
-                <div class="repo-links">
-                    <a href="/%s">Browse</a>
-                    <a href="/repo/%s">Info</a>
-                    %s
-                </div>
-            </div>
-        </li>`, repo, typeIcon, repo, repoType, repo, repo, refreshButton))
-		}
-	}
-
-	html.WriteString(`    </ul>
-    <script>
-        function refreshRepo(repoName) {
-            if (confirm('Refresh metadata for repository: ' + repoName + '?')) {
-                fetch('/repo/' + encodeURIComponent(repoName) + '/refresh', {
-                    method: 'POST'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        alert('Repository refreshed successfully');
-                    } else {
-                        alert('Refresh failed: ' + (data.message || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    alert('Refresh failed: ' + error.message);
-                });
-            }
-        }
-    </script>
-    <hr>
-    <p><em>Generated by Plus Artifacts Server</em></p>
-</body>
-</html>`)
-
-	return html.String()
-}
-
-// 修改 handleRepoListPage 使用新的函数
-func handleRepoListPage(ctx *fasthttp.RequestCtx, h *API) {
-	// 获取仓库列表
-	repos, err := h.repoService.ListRepos(ctx)
-	if err != nil {
-		log.Printf("Failed to list repositories: %v", err)
-		ctx.Error("Failed to load repositories", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	// 生成包含类型信息的 HTML 页面
-	html := h.generateRepoListHTMLWithTypes(repos)
-	ctx.SetContentType("text/html; charset=utf-8")
-	ctx.SetBodyString(html)
-}
-
-
-// 生成仓库列表 HTML
-func generateRepoListHTML(repos []string) string {
-	var html strings.Builder
-
-	html.WriteString(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Repository List</title>
-    <style>
-        body { font-family: monospace; margin: 20px; }
-        h1 { border-bottom: 1px solid #ccc; color: #333; }
-        .repo-list { list-style: none; padding: 0; }
-        .repo-list li { padding: 10px 0; border-bottom: 1px solid #eee; }
-        .repo-list a { text-decoration: none; color: #0066cc; font-size: 16px; }
-        .repo-list a:hover { text-decoration: underline; }
-        .repo-item { display: flex; justify-content: space-between; align-items: center; }
-        .repo-name { font-weight: bold; }
-        .repo-links { font-size: 14px; }
-        .repo-links a { margin-left: 10px; color: #666; }
-        .back-link { margin-bottom: 20px; }
-        .back-link a { color: #999; }
-    </style>
-</head>
-<body>
-    <div class="back-link">
-        <a href="/">← Back to Home</a>
-    </div>
-    <h1>📁 All Repositories</h1>
-    <ul class="repo-list">`)
-	
-	if len(repos) == 0 {
-		html.WriteString(`        <li>No repositories found.</li>`)
-	} else {
-		for _, repo := range repos {
-			html.WriteString(fmt.Sprintf(`
-        <li>
-            <div class="repo-item">
-                <div>
-                    <a href="/%s" class="repo-name">📁 %s</a>
-                </div>
-                <div class="repo-links">
-                    <a href="/%s">Browse</a>
-                    <a href="/repo/%s">Info</a>
-                </div>
-            </div>
-        </li>`, repo, repo, repo, repo))
-		}
-	}
-
-	html.WriteString(`    </ul>
-    <hr>
-    <p><em>Generated by Plus Artifacts Server</em></p>
-</body>
-</html>`)
-
-	return html.String()
-}
-
-func getFileIcon(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".rpm":
-		return "📦"
-	case ".deb":
-		return "📦"
-	case ".xml":
-		return "📄"
-	case ".gz", ".xz":
-		return "🗜️"
-	case ".txt":
-		return "📝"
-	case ".json":
-		return "🔧"
-	case ".log":
-		return "📋"
-	default:
-		return "📄"
-	}
-}
-
-// Web UI 静态文件处理 (现代方式)
-func handleWebStatic(ctx *fasthttp.RequestCtx, staticHandler fasthttp.RequestHandler) {
-	originalPath := ctx.Path()
-	newPath := strings.TrimPrefix(string(originalPath), "/static")
-	ctx.URI().SetPath(newPath)
-	staticHandler(ctx)
-	ctx.URI().SetPath(string(originalPath))
 }
 
 // 仓库文件直接访问 (nginx 兼容方式)
@@ -962,111 +565,6 @@ func (h *API) handleRepoBrowse(ctx *fasthttp.RequestCtx, browseRegex *regexp.Reg
 	}
 }
 
-// 根路径处理
-func handleRootPath(ctx *fasthttp.RequestCtx) {
-	html := `<!DOCTYPE html>
-<html>
-<head>
-    <title>Plus Artifacts Server</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 50px; text-align: center; }
-        .option { margin: 20px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; display: inline-block; }
-        .option a { text-decoration: none; color: #0066cc; font-size: 18px; }
-        .option:hover { background-color: #f5f5f5; }
-    </style>
-</head>
-<body>
-    <h1>Plus Artifacts Server</h1>
-    <p>Choose your preferred interface:</p>
-    
-    <div class="option">
-        <a href="/static/">📱 Modern Web UI</a>
-        <p>Feature-rich web interface for package management</p>
-    </div>
-    
-    <div class="option">
-        <a href="/repo/">📁 Browse Repositories</a>
-        <p>Traditional file browser (nginx-style)</p>
-    </div>
-    
-    <div class="option">
-        <a href="/repos">🔧 API Endpoints</a>
-        <p>JSON API for programmatic access</p>
-    </div>
-</body>
-</html>`
-
-	ctx.SetContentType("text/html; charset=utf-8")
-	ctx.SetBodyString(html)
-}
-
-// API 端点处理
-func handleAPIEndpoints(ctx *fasthttp.RequestCtx, method, path string, h *API) bool {
-	switch path {
-	case "/health":
-		if method == "GET" {
-			h.Health(ctx)
-			return true
-		}
-	case "/ready":
-		if method == "GET" {
-			h.Ready(ctx)
-			return true
-		}
-	case "/metrics":
-		if method == "GET" {
-			h.Metrics(ctx)
-			return true
-		}
-	case "/repos":
-		if method == "GET" {
-			h.ListRepos(ctx)
-			return true
-		} else if method == "POST" {
-			h.CreateRepo(ctx)
-			return true
-		}
-	}
-	return false
-}
-
-// 创建仓库文件处理器
-func createRepoHandler(root string) fasthttp.RequestHandler {
-	fs := &fasthttp.FS{
-		Root:               root,
-		GenerateIndexPages: true, // 启用目录索引
-		AcceptByteRange:    true,
-	}
-	return fs.NewRequestHandler()
-}
-
-func metricsMiddleware(next fasthttp.RequestHandler) fasthttp.RequestHandler {
-	return func(ctx *fasthttp.RequestCtx) {
-		start := time.Now()
-		metrics.IncrementRequests()
-		metrics.IncrementActiveRequests()
-
-		defer func() {
-			metrics.DecrementActiveRequests()
-			metrics.RecordResponseTime(time.Since(start))
-		}()
-
-		next(ctx)
-
-		// 记录特定操作的指标
-		path := string(ctx.Path())
-		if strings.Contains(path, "/upload") {
-			metrics.IncrementUploads()
-		} else if strings.Contains(path, "/rpm/") || strings.Contains(path, "/deb/") {
-			metrics.IncrementDownloads()
-		}
-
-		if ctx.Response.StatusCode() >= 400 {
-			metrics.IncrementErrors()
-		}
-	}
-}
-
 func (h *API) ServeMetadata(ctx *fasthttp.RequestCtx, repoName, filename string) {
 	reader, err := h.repoService.GetMetadata(ctx, repoName, filename)
 	if err != nil {
@@ -1075,7 +573,7 @@ func (h *API) ServeMetadata(ctx *fasthttp.RequestCtx, repoName, filename string)
 	}
 	defer reader.Close()
 
-	contentType := getContentType(filename)
+	contentType := utils.GetContentType(filename)
 	ctx.Response.Header.Set("Content-Type", contentType)
 	ctx.Response.Header.Set("Cache-Control", "public, max-age=300")
 
@@ -1085,7 +583,7 @@ func (h *API) ServeMetadata(ctx *fasthttp.RequestCtx, repoName, filename string)
 func (h *API) GetRepoInfo(ctx *fasthttp.RequestCtx, repoName string) {
 	packages, err := h.repoService.ListPackages(ctx, repoName)
 	if err != nil {
-		log.Printf("Get repo info failed for %s: %v", repoName, err)
+		log.Logger.Debugf("Get repo info failed for %s: %v", repoName, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Failed to get repository info: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
@@ -1093,7 +591,7 @@ func (h *API) GetRepoInfo(ctx *fasthttp.RequestCtx, repoName string) {
 	// 新增：获取仓库类型
 	repoType, err := h.repoService.GetRepoType(ctx, repoName)
 	if err != nil {
-		log.Printf("Failed to get repository type for %s: %v", repoName, err)
+		log.Logger.Debugf("Failed to get repository type for %s: %v", repoName, err)
 		repoType = "unknown" // 设置默认值而不是返回错误
 	}
 
@@ -1124,7 +622,6 @@ func (h *API) GetRepoInfo(ctx *fasthttp.RequestCtx, repoName string) {
 	}, fasthttp.StatusOK)
 }
 
-// 修改：构建仓库树结构，包含类型信息
 func (h *API) buildRepoTreeWithTypes(repos []string) map[string]*types.TreeNode {
 	tree := make(map[string]*types.TreeNode)
 
@@ -1166,11 +663,10 @@ func (h *API) buildRepoTreeWithTypes(repos []string) map[string]*types.TreeNode 
 	return tree
 }
 
-// 修改 ListRepos 方法使用新的构建函数
 func (h *API) ListRepos(ctx *fasthttp.RequestCtx) {
 	repos, err := h.repoService.ListRepos(ctx)
 	if err != nil {
-		log.Printf("List repositories failed: %v", err)
+		log.Logger.Debugf("List repositories failed: %v", err)
 		h.sendJSONError(ctx, fmt.Sprintf("Failed to list repositories: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
@@ -1186,55 +682,10 @@ func (h *API) ListRepos(ctx *fasthttp.RequestCtx) {
 	}, fasthttp.StatusOK)
 }
 
-func (h *API) renderRepoTree(tree map[string]*types.TreeNode, level int) string {
-	var html strings.Builder
-	
-	for name, node := range tree {
-		if node.Type == "repo" {
-			// 根据仓库类型显示不同图标
-			typeIcon := h.getRepoTypeIcon(node.RepoType)
-			html.WriteString(fmt.Sprintf(`
-				<div class="repo-item" style="margin-left: %dpx;">
-					<div class="repo-name">%s %s <span class="repo-type">(%s)</span> <span class="repo-path">(%s)</span></div>
-					<div class="repo-actions">
-						<button class="btn-refresh" onclick="repoManager.refreshRepository('%s')">
-							Refresh Metadata
-						</button>
-						<button class="btn-info" onclick="repoManager.showRepositoryInfo('%s')">
-							Info
-						</button>
-					</div>
-				</div>`, level*20, typeIcon, name, node.RepoType, node.Path, node.Path, node.Path))
-		} else if node.Type == "directory" && node.Children != nil {
-			html.WriteString(fmt.Sprintf(`
-				<div class="repo-directory" style="margin-left: %dpx;">
-					<div class="directory-name">📁 %s/</div>
-					%s
-				</div>`, level*20, name, h.renderRepoTree(node.Children, level+1)))
-		}
-	}
-	
-	return html.String()
-}
-
-// 新增：根据仓库类型返回对应图标
-func (h *API) getRepoTypeIcon(repoType string) string {
-	switch repoType {
-	case "rpm":
-		return "📦" // RPM 包
-	case "deb":
-		return "📋" // DEB 包
-	case "files":
-		return "📁" // 文件
-	default:
-		return "❓" // 未知类型
-	}
-}
-
 func (h *API) DeleteRepo(ctx *fasthttp.RequestCtx, repoName string) {
 	err := h.repoService.DeleteRepo(ctx, repoName)
 	if err != nil {
-		log.Printf("Delete repository failed for %s: %v", repoName, err)
+		log.Logger.Debugf("Delete repository failed for %s: %v", repoName, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Failed to delete repository: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
@@ -1400,7 +851,7 @@ func (h *API) CreateRepo(ctx *fasthttp.RequestCtx) {
 
 	err := h.repoService.CreateRepo(ctx, repoPath, rt.Type)
 	if err != nil {
-		log.Printf("Create repository failed for %s (type: %s): %v", repoPath, rt.Type, err)
+		log.Logger.Debugf("Create repository failed for %s (type: %s): %v", repoPath, rt.Type, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Failed to create repository: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
@@ -1408,43 +859,6 @@ func (h *API) CreateRepo(ctx *fasthttp.RequestCtx) {
 	h.sendSuccess(ctx, fmt.Sprintf("Repository created successfully (type: %s)", rt.Type))
 }
 
-// 构建仓库树结构
-func buildRepoTree(repos []string) map[string]*types.TreeNode {
-	tree := make(map[string]*types.TreeNode)
-
-	for _, repo := range repos {
-		parts := strings.Split(repo, "/")
-		current := tree
-
-		for i, part := range parts {
-			if _, exists := current[part]; !exists {
-				if i == len(parts)-1 {
-					// 叶子节点，存储完整路径
-					current[part] = &types.TreeNode{
-						Type: "repo",
-						Path: repo,
-					}
-				} else {
-					// 中间节点
-					current[part] = &types.TreeNode{
-						Type:     "directory",
-						Children: make(map[string]*types.TreeNode),
-					}
-				}
-			}
-
-			if i < len(parts)-1 {
-				if node := current[part]; node != nil && node.Children != nil {
-					current = node.Children
-				}
-			}
-		}
-	}
-
-	return tree
-}
-
-// 修改上传路径解析
 func (h *API) Upload(ctx *fasthttp.RequestCtx) {
 	// 解析路径: /repo/{repoPath}/upload，支持多层路径
 	path := string(ctx.Path())
@@ -1474,14 +888,14 @@ func (h *API) Upload(ctx *fasthttp.RequestCtx) {
 	// 新增：获取仓库类型并验证文件类型
 	repoType, err := h.repoService.GetRepoType(ctx, repoPath)
 	if err != nil {
-		log.Printf("Failed to get repository type for %s: %v", repoPath, err)
+		log.Logger.Debugf("Failed to get repository type for %s: %v", repoPath, err)
 		h.sendJSONError(ctx, "Repository not found", fasthttp.StatusNotFound)
 		return
 	}
 
 	// 验证文件类型与仓库类型的匹配
-	if !h.validateFileTypeForRepo(fileHeader.Filename, repoType) {
-		h.sendJSONError(ctx, h.getFileTypeErrorMessage(repoType), fasthttp.StatusBadRequest)
+	if !utils.ValidateFileTypeForRepo(fileHeader.Filename, repoType) {
+		h.sendJSONError(ctx, utils.GetFileTypeErrorMessage(repoType), fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -1495,42 +909,12 @@ func (h *API) Upload(ctx *fasthttp.RequestCtx) {
 	// 上传文件到指定路径
 	err = h.repoService.UploadPackage(ctx, repoPath, fileHeader.Filename, file)
 	if err != nil {
-		log.Printf("Upload failed for repo %s, file %s: %v", repoPath, fileHeader.Filename, err)
+		log.Logger.Debugf("Upload failed for repo %s, file %s: %v", repoPath, fileHeader.Filename, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Upload failed: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
 
 	h.sendSuccess(ctx, "Package uploaded successfully")
-}
-
-// 新增：验证文件类型与仓库类型的匹配
-func (h *API) validateFileTypeForRepo(filename, repoType string) bool {
-	filename = strings.ToLower(filename)
-	
-	switch repoType {
-	case "rpm":
-		return strings.HasSuffix(filename, ".rpm")
-	case "deb":
-		return strings.HasSuffix(filename, ".deb")
-	case "files":
-		return true // files 类型接受任何文件
-	default:
-		return false
-	}
-}
-
-// 新增：获取文件类型错误消息
-func (h *API) getFileTypeErrorMessage(repoType string) string {
-	switch repoType {
-	case "rpm":
-		return "This RPM repository only accepts .rpm files"
-	case "deb":
-		return "This DEB repository only accepts .deb files"
-	case "files":
-		return "Invalid file type"
-	default:
-		return "Invalid file type for this repository"
-	}
 }
 
 func (h *API) GetPackageChecksum(ctx *fasthttp.RequestCtx) {
@@ -1561,23 +945,17 @@ func (h *API) GetPackageChecksum(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	log.Printf("🔍 Getting checksum for: repo=%s, file=%s", repoName, filename)
-
-	// 验证文件名
-	if !strings.HasSuffix(filename, ".rpm") {
-		h.sendJSONError(ctx, "Only RPM files are supported", fasthttp.StatusBadRequest)
-		return
-	}
+	log.Logger.Debugf("🔍 Getting checksum for: repo=%s, file=%s", repoName, filename)
 
 	// 调用服务层获取校验和
 	checksum, err := h.repoService.GetPackageChecksum(ctx, repoName, filename)
 	if err != nil {
-		log.Printf("❌ Failed to get checksum: repo=%s, file=%s, error=%v", repoName, filename, err)
+		log.Logger.Debugf("❌ Failed to get checksum: repo=%s, file=%s, error=%v", repoName, filename, err)
 		h.sendJSONError(ctx, fmt.Sprintf("Failed to get checksum: %v", err), fasthttp.StatusNotFound)
 		return
 	}
 
-	log.Printf("✅ Found checksum for %s: %s", filename, checksum)
+	log.Logger.Debugf("✅ Found checksum for %s: %s", filename, checksum)
 
 	// 构建响应
 	response := &types.PackageChecksum{
@@ -1594,272 +972,63 @@ func (h *API) GetPackageChecksum(ctx *fasthttp.RequestCtx) {
 	h.sendJSONResponse(ctx, response, fasthttp.StatusOK)
 }
 
-func getContentType(filename string) string {
-	switch {
-	case strings.HasSuffix(filename, ".xml"):
-		return "application/xml"
-	case strings.HasSuffix(filename, ".xml.gz"):
-		return "application/gzip"
-	case strings.HasSuffix(filename, ".sqlite"):
-		return "application/x-sqlite3"
-	default:
-		return "application/octet-stream"
-	}
-}
+func (h *API) DownloadPackage(ctx *fasthttp.RequestCtx, repoName, filename string) {
+	log.Logger.Debugf("🔍 Download request: repo=%s, file=%s", repoName, filename)
 
-// 添加缓存头函数
-func setCacheHeaders(ctx *fasthttp.RequestCtx, filename string) {
-	ext := strings.ToLower(filepath.Ext(filename))
-
-	switch ext {
-	case ".rpm", ".deb":
-		// 包文件长期缓存
-		ctx.Response.Header.Set("Cache-Control", "public, max-age=86400")
-	case ".xml", ".gz", ".xz":
-		// 元数据文件短期缓存
-		ctx.Response.Header.Set("Cache-Control", "public, max-age=300")
-	default:
-		ctx.Response.Header.Set("Cache-Control", "public, max-age=1800")
-	}
-}
-
-// 格式化文件大小
-func formatFileSize(size int64) string {
-	const unit = 1024
-	if size < unit {
-		return fmt.Sprintf("%d B", size)
-	}
-	div, exp := int64(unit), 0
-	for n := size / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
-}
-
-func createEmbeddedStaticHandler() fasthttp.RequestHandler {
-	// 调试：列出所有嵌入的文件
-	log.Println("=== Embedded files debug ===")
-	err := fs.WalkDir(assets.StaticFiles, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			log.Printf("Walk error: %v", err)
-			return err
-		}
-		if d.IsDir() {
-			log.Printf("DIR:  %s/", path)
-		} else {
-			log.Printf("FILE: %s", path)
-		}
-		return nil
-	})
-	if err != nil {
-		log.Printf("Failed to walk embedded files: %v", err)
-	}
-	log.Println("=== End embedded files debug ===")
-
-	return func(ctx *fasthttp.RequestCtx) {
-		path := string(ctx.Path())
-		log.Printf("🔍 Requested static path: %s", path)
-
-		// 正确处理路径
-		filePath := strings.TrimPrefix(path, "/static/")
-		// 移除前导斜杠（如果有的话）
-		filePath = strings.TrimPrefix(filePath, "/")
-
-		// 如果是根路径，默认为 index.html
-		if filePath == "" {
-			filePath = "index.html"
-		}
-
-		// 构建完整路径，确保没有双斜杠
-		fullPath := "static/" + filePath
-		log.Printf("🔍 Looking for embedded file: %s", fullPath)
-
-		data, err := assets.StaticFiles.ReadFile(fullPath)
-		if err != nil {
-			log.Printf("❌ File not found: %s, error: %v", fullPath, err)
-			ctx.Error("File not found", fasthttp.StatusNotFound)
-			return
-		}
-
-		log.Printf("✅ Found file at: %s", fullPath)
-
-		contentType := getStaticContentType(filePath)
-		ctx.Response.Header.Set("Content-Type", contentType)
-		ctx.SetBody(data)
-		log.Printf("✅ Served file: %s (%d bytes, %s)", filePath, len(data), contentType)
-	}
-}
-
-func getStaticContentType(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".html":
-		return "text/html; charset=utf-8"
-	case ".css":
-		return "text/css"
-	case ".js":
-		return "application/javascript"
-	case ".json":
-		return "application/json"
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".svg":
-		return "image/svg+xml"
-	case ".ico":
-		return "image/x-icon"
-	default:
-		return "application/octet-stream"
-	}
-}
-
-// 创建外部静态文件处理器（开发模式）
-func createExternalStaticHandler(root string) fasthttp.RequestHandler {
-	fs := &fasthttp.FS{
-		Root:               root,
-		IndexNames:         []string{"index.html"},
-		GenerateIndexPages: false,
-		AcceptByteRange:    true,
-	}
-	return fs.NewRequestHandler()
-}
-
-func handleRepoFiles(ctx *fasthttp.RequestCtx, root, repoName, filePath string) {
-	log.Printf("handleRepoFiles called: repo=%s, path='%s'", repoName, filePath)
-
-	// 构建完整路径
-	var fullPath string
-	if filePath == "" {
-		fullPath = fmt.Sprintf("%s/%s", root, repoName)
+	// 根据文件扩展名确定包类型
+	var contentType string
+	if strings.HasSuffix(filename, ".rpm") {
+		contentType = "application/x-rpm"
+		metrics.IncrementDownloads()
+	} else if strings.HasSuffix(filename, ".deb") {
+		contentType = "application/vnd.debian.binary-package"
+		metrics.IncrementDownloads()
 	} else {
-		fullPath = fmt.Sprintf("%s/%s/%s", root, repoName, filePath)
-	}
-
-	log.Printf("Full path: %s", fullPath)
-
-	// 检查路径是否存在
-	info, err := os.Stat(fullPath)
-	if err != nil {
-		log.Printf("Path not found: %s, error: %v", fullPath, err)
-		ctx.Error("Path not found", fasthttp.StatusNotFound)
+		ctx.Error("Unsupported package type", fasthttp.StatusBadRequest)
 		return
 	}
 
-	if info.IsDir() {
-		log.Printf("Serving directory listing for: %s", fullPath)
-		handleDirectoryListing(ctx, repoName, filePath, fullPath)
-	} else {
-		log.Printf("Serving file: %s", fullPath)
-		// 对于元数据文件，设置正确的 Content-Type
-		if strings.Contains(filePath, "repodata/") {
-			filename := filepath.Base(filePath)
-			contentType := getContentType(filename)
-			ctx.Response.Header.Set("Content-Type", contentType)
-			ctx.Response.Header.Set("Cache-Control", "public, max-age=300")
-		}
-		fasthttp.ServeFile(ctx, fullPath)
+	reader, err := h.repoService.DownloadPackage(ctx, repoName, filename)
+	if err != nil {
+		log.Logger.Debugf("❌ Package not found: repo=%s, file=%s, error=%v", repoName, filename, err)
+		ctx.Error("Package not found", fasthttp.StatusNotFound)
+		return
 	}
+	defer reader.Close()
+
+	log.Logger.Debugf("✅ Serving package: %s/%s", repoName, filename)
+
+	ctx.Response.Header.Set("Content-Type", contentType)
+	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	ctx.Response.Header.Set("Cache-Control", "public, max-age=3600")
+
+	ctx.SetBodyStream(reader, -1)
 }
 
-func generateDirectoryHTML(repoName, subPath string, entries []os.DirEntry) string {
-	var html strings.Builder
+func handleDirectoryListing(ctx *fasthttp.RequestCtx, repoName, subPath, fullPath string) {
+	log.Logger.Debugf("🔍 Directory listing: repo=%s, subPath=%s, fullPath=%s", repoName, subPath, fullPath)
 
-	currentPath := fmt.Sprintf("/repo/%s/files", repoName)
-	if subPath != "" {
-		currentPath = fmt.Sprintf("/repo/%s/files/%s", repoName, subPath)
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		log.Logger.Debugf("❌ Cannot read directory %s: %v", fullPath, err)
+		ctx.Error("Cannot read directory", fasthttp.StatusInternalServerError)
+		return
 	}
 
-	html.WriteString(fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Index of %s</title>
-    <style>
-        body { font-family: monospace; margin: 20px; }
-        h1 { border-bottom: 1px solid #ccc; }
-        .file-list { list-style: none; padding: 0; }
-        .file-list li { padding: 5px 0; }
-        .file-list a { text-decoration: none; color: #0066cc; }
-        .file-list a:hover { text-decoration: underline; }
-        .dir { font-weight: bold; }
-        .size { color: #666; margin-left: 20px; }
-        .parent { color: #999; }
-        .file-info { display: flex; justify-content: space-between; align-items: center; }
-        .file-name { flex: 1; }
-        .file-meta { color: #666; font-size: 0.9em; }
-    </style>
-</head>
-<body>
-    <h1>📁 Repository: %s/%s</h1>
-    <ul class="file-list">`, currentPath, repoName, subPath))
-
-	// 修改父目录链接逻辑
-	var parentPath string
-	if subPath != "" {
-		// 如果在子目录中，返回上一级
-		cleanSubPath := strings.Trim(subPath, "/")
-		if !strings.Contains(cleanSubPath, "/") {
-			// 单级子目录，返回仓库根目录
-			parentPath = fmt.Sprintf("/repo/%s/files/", repoName)
-		} else {
-			// 多级子目录，返回上一级
-			parts := strings.Split(cleanSubPath, "/")
-			parentSubPath := strings.Join(parts[:len(parts)-1], "/")
-			parentPath = fmt.Sprintf("/repo/%s/files/%s/", repoName, parentSubPath)
-		}
-	} else {
-		// 如果在仓库根目录，返回所有仓库列表
-		parentPath = "/repo/"
-	}
-
-	html.WriteString(fmt.Sprintf(`        <li><a href="%s" class="parent">../</a></li>`, parentPath))
-
-	// 添加文件和目录
+	log.Logger.Debugf("📁 Found %d entries in directory %s", len(entries), fullPath)
 	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		name := entry.Name()
-
-		if entry.IsDir() {
-			linkPath := fmt.Sprintf("%s/%s/", currentPath, name)
-			html.WriteString(fmt.Sprintf(`        <li>
-				<div class="file-info">
-					<div class="file-name"><a href="%s" class="dir">📁 %s/</a></div>
-					<div class="file-meta">Directory</div>
-				</div>
-			</li>`, linkPath, name))
-		} else {
-			linkPath := fmt.Sprintf("%s/%s", currentPath, name)
-			size := formatFileSize(info.Size())
-			icon := getFileIcon(name)
-			modTime := info.ModTime().Format("2006-01-02 15:04:05")
-
-			html.WriteString(fmt.Sprintf(`        <li>
-				<div class="file-info">
-					<div class="file-name"><a href="%s">%s %s</a></div>
-					<div class="file-meta">%s | %s</div>
-				</div>
-			</li>`, linkPath, icon, name, size, modTime))
-		}
+		log.Logger.Debugf("  - %s (dir: %v)", entry.Name(), entry.IsDir())
 	}
 
-	html.WriteString(`    </ul>
-    <hr>
-    <p><em>Generated by Plus Artifacts Server</em></p>
-</body>
-</html>`)
+	// 生成 HTML 目录列表
+	html := utils.GenerateDirectoryHTML(repoName, subPath, entries)
 
-	return html.String()
+	ctx.SetContentType("text/html; charset=utf-8")
+	ctx.SetBodyString(html)
 }
 
 func handleRepoEndpoints(ctx *fasthttp.RequestCtx, method, root, path string, patterns map[string]*regexp.Regexp, h *API) bool {
-	log.Printf("🔍 handleRepoEndpoints: method=%s, path=%s", method, path)
+	log.Logger.Debugf("🔍 handleRepoEndpoints: method=%s, path=%s", method, path)
 
 	// 特殊处理 /files/ 路径
 	if strings.Contains(path, "/files/") {
@@ -1869,7 +1038,7 @@ func handleRepoEndpoints(ctx *fasthttp.RequestCtx, method, root, path string, pa
 			repoPath := matches[1] // 例如: "oe-release/x86_64"
 			filePath := matches[2] // 例如: "repodata/repomd.xml"
 
-			log.Printf("✅ Matched files pattern: repo='%s', file='%s'", repoPath, filePath)
+			log.Logger.Debugf("✅ Matched files pattern: repo='%s', file='%s'", repoPath, filePath)
 
 			if method == "GET" {
 				handleRepoFiles(ctx, root, repoPath, filePath)
@@ -1887,7 +1056,7 @@ func handleRepoEndpoints(ctx *fasthttp.RequestCtx, method, root, path string, pa
 	for _, patternName := range priorityPatterns {
 		regex := patterns[patternName]
 		if matches := regex.FindStringSubmatch(path); matches != nil {
-			log.Printf("✅ Matched pattern: %s for path: %s, matches: %v", patternName, path, matches)
+			log.Logger.Debugf("✅ Matched pattern: %s for path: %s, matches: %v", patternName, path, matches)
 
 			switch patternName {
 			case "download_rpm", "download_deb":
@@ -1917,13 +1086,13 @@ func handleRepoEndpoints(ctx *fasthttp.RequestCtx, method, root, path string, pa
 				}
 			case "repo_files":
 				if method == "GET" {
-					log.Printf("Handling repo_files: repo=%s, path=%s", matches[1], matches[2])
+					log.Logger.Debugf("Handling repo_files: repo=%s, path=%s", matches[1], matches[2])
 					handleRepoFiles(ctx, h.config.StoragePath, matches[1], matches[2])
 					return true
 				}
 			case "repo_browse":
 				if method == "GET" {
-					log.Printf("Handling repo_browse: repo=%s, path=%s", matches[1], matches[2])
+					log.Logger.Debugf("Handling repo_browse: repo=%s, path=%s", matches[1], matches[2])
 					h.handleRepoBrowse(ctx, patterns["repo_browse"])
 					return true
 				}
@@ -1947,57 +1116,257 @@ func handleRepoEndpoints(ctx *fasthttp.RequestCtx, method, root, path string, pa
 	return false
 }
 
-func (h *API) DownloadPackage(ctx *fasthttp.RequestCtx, repoName, filename string) {
-	log.Printf("🔍 Download request: repo=%s, file=%s", repoName, filename)
-
-	// 根据文件扩展名确定包类型
-	var contentType string
-	if strings.HasSuffix(filename, ".rpm") {
-		contentType = "application/x-rpm"
-		metrics.IncrementDownloads()
-	} else if strings.HasSuffix(filename, ".deb") {
-		contentType = "application/vnd.debian.binary-package"
-		metrics.IncrementDownloads()
-	} else {
-		ctx.Error("Unsupported package type", fasthttp.StatusBadRequest)
-		return
+func createExternalStaticHandler(root string) fasthttp.RequestHandler {
+	fs := &fasthttp.FS{
+		Root:               root,
+		IndexNames:         []string{"index.html"},
+		GenerateIndexPages: false,
+		AcceptByteRange:    true,
 	}
-
-	reader, err := h.repoService.DownloadPackage(ctx, repoName, filename)
-	if err != nil {
-		log.Printf("❌ Package not found: repo=%s, file=%s, error=%v", repoName, filename, err)
-		ctx.Error("Package not found", fasthttp.StatusNotFound)
-		return
-	}
-	defer reader.Close()
-
-	log.Printf("✅ Serving package: %s/%s", repoName, filename)
-
-	ctx.Response.Header.Set("Content-Type", contentType)
-	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	ctx.Response.Header.Set("Cache-Control", "public, max-age=3600")
-
-	ctx.SetBodyStream(reader, -1)
+	return fs.NewRequestHandler()
 }
 
-func handleDirectoryListing(ctx *fasthttp.RequestCtx, repoName, subPath, fullPath string) {
-	log.Printf("🔍 Directory listing: repo=%s, subPath=%s, fullPath=%s", repoName, subPath, fullPath)
+func handleRepoFiles(ctx *fasthttp.RequestCtx, root, repoName, filePath string) {
+	log.Logger.Debugf("handleRepoFiles called: repo=%s, path='%s'", repoName, filePath)
+
+	// 构建完整路径
+	var fullPath string
+	if filePath == "" {
+		fullPath = fmt.Sprintf("%s/%s", root, repoName)
+	} else {
+		fullPath = fmt.Sprintf("%s/%s/%s", root, repoName, filePath)
+	}
+
+	log.Logger.Debugf("Full path: %s", fullPath)
+
+	// 检查路径是否存在
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		log.Logger.Debugf("Path not found: %s, error: %v", fullPath, err)
+		ctx.Error("Path not found", fasthttp.StatusNotFound)
+		return
+	}
+
+	if info.IsDir() {
+		log.Logger.Debugf("Serving directory listing for: %s", fullPath)
+		handleDirectoryListing(ctx, repoName, filePath, fullPath)
+	} else {
+		log.Logger.Debugf("Serving file: %s", fullPath)
+		// 对于元数据文件，设置正确的 Content-Type
+		if strings.Contains(filePath, "repodata/") {
+			filename := filepath.Base(filePath)
+			contentType := utils.GetContentType(filename)
+			ctx.Response.Header.Set("Content-Type", contentType)
+			ctx.Response.Header.Set("Cache-Control", "public, max-age=300")
+		}
+		fasthttp.ServeFile(ctx, fullPath)
+	}
+}
+
+func createEmbeddedStaticHandler() fasthttp.RequestHandler {
+	// 调试：列出所有嵌入的文件
+	log.Logger.Info("=== Embedded files debug ===")
+	err := fs.WalkDir(assets.StaticFiles, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Logger.Debugf("Walk error: %v", err)
+			return err
+		}
+		if d.IsDir() {
+			log.Logger.Debugf("DIR:  %s/", path)
+		} else {
+			log.Logger.Debugf("FILE: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Logger.Debugf("Failed to walk embedded files: %v", err)
+	}
+	log.Logger.Info("=== End embedded files debug ===")
+
+	return func(ctx *fasthttp.RequestCtx) {
+		path := string(ctx.Path())
+		log.Logger.Debugf("🔍 Requested static path: %s", path)
+
+		// 正确处理路径
+		filePath := strings.TrimPrefix(path, "/static/")
+		// 移除前导斜杠（如果有的话）
+		filePath = strings.TrimPrefix(filePath, "/")
+
+		// 如果是根路径，默认为 index.html
+		if filePath == "" {
+			filePath = "index.html"
+		}
+
+		// 构建完整路径，确保没有双斜杠
+		fullPath := "static/" + filePath
+		log.Logger.Debugf("🔍 Looking for embedded file: %s", fullPath)
+
+		data, err := assets.StaticFiles.ReadFile(fullPath)
+		if err != nil {
+			log.Logger.Debugf("❌ File not found: %s, error: %v", fullPath, err)
+			ctx.Error("File not found", fasthttp.StatusNotFound)
+			return
+		}
+
+		log.Logger.Debugf("✅ Found file at: %s", fullPath)
+
+		contentType := utils.GetStaticContentType(filePath)
+		ctx.Response.Header.Set("Content-Type", contentType)
+		ctx.SetBody(data)
+		log.Logger.Debugf("✅ Served file: %s (%d bytes, %s)", filePath, len(data), contentType)
+	}
+}
+
+func createRepoHandler(root string) fasthttp.RequestHandler {
+	fs := &fasthttp.FS{
+		Root:               root,
+		GenerateIndexPages: true, // 启用目录索引
+		AcceptByteRange:    true,
+	}
+	return fs.NewRequestHandler()
+}
+
+func handleRootPath(ctx *fasthttp.RequestCtx) {
+	ctx.SetContentType("text/html; charset=utf-8")
+	ctx.SetBodyString(utils.HandleRootPath())
+}
+
+func handleAPIEndpoints(ctx *fasthttp.RequestCtx, method, path string, h *API) bool {
+	switch path {
+	case "/health":
+		if method == "GET" {
+			h.Health(ctx)
+			return true
+		}
+	case "/ready":
+		if method == "GET" {
+			h.Ready(ctx)
+			return true
+		}
+	case "/metrics":
+		if method == "GET" {
+			h.Metrics(ctx)
+			return true
+		}
+	case "/repos":
+		if method == "GET" {
+			h.ListRepos(ctx)
+			return true
+		} else if method == "POST" {
+			h.CreateRepo(ctx)
+			return true
+		}
+	}
+	return false
+}
+
+func handleWebStatic(ctx *fasthttp.RequestCtx, staticHandler fasthttp.RequestHandler) {
+	originalPath := ctx.Path()
+	newPath := strings.TrimPrefix(string(originalPath), "/static")
+	ctx.URI().SetPath(newPath)
+	staticHandler(ctx)
+	ctx.URI().SetPath(string(originalPath))
+}
+
+func handleRepoListPage(ctx *fasthttp.RequestCtx, h *API) {
+	// 获取仓库列表
+	repos, err := h.repoService.ListRepos(ctx)
+	if err != nil {
+		log.Logger.Debugf("Failed to list repositories: %v", err)
+		ctx.Error("Failed to load repositories", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	// 生成包含类型信息的 HTML 页面
+	html := utils.GenerateRepoListHTMLWithTypes(repos, h.repoService.GetRepoType)
+	ctx.SetContentType("text/html; charset=utf-8")
+	ctx.SetBodyString(html)
+}
+
+func handleDirectoryListingNew(ctx *fasthttp.RequestCtx, repoPath, fullPath string) {
+	log.Logger.Debugf("🔍 Direct directory listing: repoPath=%s, fullPath=%s", repoPath, fullPath)
 
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
-		log.Printf("❌ Cannot read directory %s: %v", fullPath, err)
+		log.Logger.Debugf("❌ Cannot read directory %s: %v", fullPath, err)
 		ctx.Error("Cannot read directory", fasthttp.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("📁 Found %d entries in directory %s", len(entries), fullPath)
-	for _, entry := range entries {
-		log.Printf("  - %s (dir: %v)", entry.Name(), entry.IsDir())
-	}
+	log.Logger.Debugf("📁 Found %d entries in directory %s", len(entries), fullPath)
 
-	// 生成 HTML 目录列表
-	html := generateDirectoryHTML(repoName, subPath, entries)
+	// 生成新的 HTML 目录列表
+	html := utils.GenerateDirectoryHTMLNew(repoPath, entries)
 
 	ctx.SetContentType("text/html; charset=utf-8")
 	ctx.SetBodyString(html)
+}
+
+func handleDirectBrowse(ctx *fasthttp.RequestCtx, path string, h *API) bool {
+	// 排除特殊路径
+	if path == "/" || strings.HasPrefix(path, "/static/") || 
+	   strings.HasPrefix(path, "/health") ||
+	   strings.HasPrefix(path, "/ready") || strings.HasPrefix(path, "/metrics") ||
+	   strings.HasPrefix(path, "/repos") {
+		return false
+	}
+
+	// 排除所有 /repo/ 开头的路径，这些由原有逻辑处理
+	if strings.HasPrefix(path, "/repo/") {
+		return false
+	}
+
+	// 移除前导斜杠
+	cleanPath := strings.TrimPrefix(path, "/")
+	if cleanPath == "" {
+		return false
+	}
+
+	log.Logger.Debugf("🔍 Direct browse attempt: cleanPath=%s", cleanPath)
+
+	// 检查是否是仓库路径
+	repos, err := h.repoService.ListRepos(ctx)
+	if err != nil {
+		log.Logger.Debugf("❌ Failed to get repos for path matching: %v", err)
+		return false
+	}
+
+	// 查找匹配的仓库路径
+	var matchedRepo string
+	var remainingPath string
+	
+	for _, repo := range repos {
+		if cleanPath == repo {
+			matchedRepo = repo
+			remainingPath = ""
+			break
+		} else if strings.HasPrefix(cleanPath, repo+"/") {
+			matchedRepo = repo
+			remainingPath = strings.TrimPrefix(cleanPath, repo+"/")
+			break
+		}
+	}
+
+	if matchedRepo == "" {
+		log.Logger.Debugf("❌ No matching repository found for path: %s", cleanPath)
+		return false
+	}
+
+	// 获取仓库类型
+	repoType, err := h.repoService.GetRepoType(ctx, matchedRepo)
+	if err != nil {
+		log.Logger.Debugf("❌ Failed to get repo type for %s: %v", matchedRepo, err)
+		repoType = "unknown"
+	}
+
+	log.Logger.Debugf("✅ Matched repository: %s (type: %s), remaining path: %s", matchedRepo, repoType, remainingPath)
+
+	// 根据仓库类型选择存储方式
+	if utils.IsObjectStorage(repoType) {
+		// 对象存储：使用仓库服务
+		return h.handleObjectStorageBrowse(ctx, matchedRepo, remainingPath)
+	} else {
+		// 本地存储：使用文件系统
+		return h.handleLocalStorageBrowse(ctx, matchedRepo, remainingPath, cleanPath)
+	}
 }
