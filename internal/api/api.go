@@ -317,31 +317,24 @@ func (h *API) handleDirectFileSystemAccess(ctx *fasthttp.RequestCtx, path string
 
 func (h *API) tryObjectStorageAccess(ctx *fasthttp.RequestCtx, cleanPath string) bool {
     log.Logger.Debugf("🔍 Checking object storage access for path: %s", cleanPath)
-
-    keyword := strings.TrimPrefix(filepath.Clean(h.config.StoragePath), "/")
-    
-    if !strings.Contains(cleanPath, keyword) {
-        log.Logger.Debugf("❌ Not a files repository (missing %s): %s", keyword, cleanPath)
-        return false
-    }
-    
     log.Logger.Debugf("✅ Detected files repository path, attempting direct access: %s", cleanPath)
-    
-    return h.handleObjectStorageFile(ctx, "", cleanPath)
+    return h.tryAccessRepository(ctx, "", cleanPath)
 }
 
 func (h *API) tryAccessRepository(ctx *fasthttp.RequestCtx, repoName, filePath string) bool {
     log.Logger.Debugf("🔍 Attempting to access repo=%s, file=%s", repoName, filePath)
+
+	isFile, isDir := utils.AnalyzeObjectStoragePath(filePath)
     
-    if filePath == "" {
+    if isDir {
         // 尝试目录访问
-        if h.handleObjectStorageDirectory(ctx, repoName, repoName) {
+        if h.handleObjectStorageDirectory(ctx, "", filePath) {
             log.Logger.Debugf("✅ Successfully accessed directory for repo: %s", repoName)
             return true
         }
-    } else {
+    } else if isFile {
         // 尝试文件访问
-        if h.handleObjectStorageFile(ctx, repoName, filePath) {
+        if h.handleObjectStorageFile(ctx, "", filePath) {
             log.Logger.Debugf("✅ Successfully accessed file: repo=%s, file=%s", repoName, filePath)
             return true
         }
@@ -352,12 +345,12 @@ func (h *API) tryAccessRepository(ctx *fasthttp.RequestCtx, repoName, filePath s
 }
 
 func (h *API) handleObjectStorageDirectory(ctx *fasthttp.RequestCtx, repoName, displayPath string) bool {
-    log.Logger.Debugf("🔍 Object storage directory: repo=%s", repoName)
+    log.Logger.Debugf("🔍 Object storage directory: repo=%s, path=%s", repoName, displayPath)
 
     // 使用仓库服务获取文件列表
-    packages, err := h.repoService.ListPackages(ctx, repoName)
+    packages, err := h.repoService.ListPackages(ctx, displayPath)
     if err != nil {
-        log.Logger.Debugf("❌ Failed to list packages for repo %s: %v", repoName, err)
+        log.Logger.Debugf("❌ Failed to list packages for repo %s: %v", displayPath, err)
         ctx.Error("Failed to access repository", fasthttp.StatusInternalServerError)
         return true
     }
@@ -439,66 +432,6 @@ func (h *API) handleDirectFileServe(ctx *fasthttp.RequestCtx, cleanPath, fullPat
     }
     
     fasthttp.ServeFile(ctx, fullPath)
-}
-
-// 新增：处理对象存储浏览
-func (h *API) handleObjectStorageBrowse(ctx *fasthttp.RequestCtx, repoName, remainingPath string) bool {
-	if remainingPath == "" {
-		// 仓库根目录 - 显示仓库内容
-		h.handleObjectStorageRepoList(ctx, repoName)
-	} else {
-		// 子路径 - 尝试下载文件
-		h.handleObjectStorageFile(ctx, repoName, remainingPath)
-	}
-	return true
-}
-
-// 新增：处理本地存储浏览
-func (h *API) handleLocalStorageBrowse(ctx *fasthttp.RequestCtx, repoName, remainingPath, cleanPath string) bool {
-	// 构建存储路径
-	var storagePath string
-	if remainingPath == "" {
-		storagePath = fmt.Sprintf("%s/%s", h.config.StoragePath, repoName)
-	} else {
-		storagePath = fmt.Sprintf("%s/%s/%s", h.config.StoragePath, repoName, remainingPath)
-	}
-
-	// 检查路径是否存在
-	info, err := os.Stat(storagePath)
-	if err != nil {
-		log.Logger.Debugf("❌ Storage path not found: %s, error: %v", storagePath, err)
-		return false
-	}
-
-	log.Logger.Debugf("✅ Local storage browse: repo=%s, path=%s, storage=%s", repoName, remainingPath, storagePath)
-
-	if info.IsDir() {
-		// 目录浏览 - 使用原有的目录列表函数
-		handleDirectoryListingNew(ctx, cleanPath, storagePath)
-	} else {
-		// 文件下载
-		fasthttp.ServeFile(ctx, storagePath)
-	}
-	
-	return true
-}
-
-// 新增：处理对象存储仓库列表
-func (h *API) handleObjectStorageRepoList(ctx *fasthttp.RequestCtx, repoName string) {
-	log.Logger.Debugf("🔍 Object storage repository browse: repo=%s", repoName)
-
-	// 使用仓库服务获取包列表
-	packages, err := h.repoService.ListPackages(ctx, repoName)
-	if err != nil {
-		log.Logger.Debugf("❌ Failed to list packages for repo %s: %v", repoName, err)
-		ctx.Error("Failed to access repository", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	// 构建简单的文件列表HTML
-	html := utils.GenerateObjectStorageRepoHTML(repoName, packages)
-	ctx.SetContentType("text/html; charset=utf-8")
-	ctx.SetBodyString(html)
 }
 
 // 仓库文件直接访问 (nginx 兼容方式)
@@ -1300,73 +1233,4 @@ func handleDirectoryListingNew(ctx *fasthttp.RequestCtx, repoPath, fullPath stri
 
 	ctx.SetContentType("text/html; charset=utf-8")
 	ctx.SetBodyString(html)
-}
-
-func handleDirectBrowse(ctx *fasthttp.RequestCtx, path string, h *API) bool {
-	// 排除特殊路径
-	if path == "/" || strings.HasPrefix(path, "/static/") || 
-	   strings.HasPrefix(path, "/health") ||
-	   strings.HasPrefix(path, "/ready") || strings.HasPrefix(path, "/metrics") ||
-	   strings.HasPrefix(path, "/repos") {
-		return false
-	}
-
-	// 排除所有 /repo/ 开头的路径，这些由原有逻辑处理
-	if strings.HasPrefix(path, "/repo/") {
-		return false
-	}
-
-	// 移除前导斜杠
-	cleanPath := strings.TrimPrefix(path, "/")
-	if cleanPath == "" {
-		return false
-	}
-
-	log.Logger.Debugf("🔍 Direct browse attempt: cleanPath=%s", cleanPath)
-
-	// 检查是否是仓库路径
-	repos, err := h.repoService.ListRepos(ctx)
-	if err != nil {
-		log.Logger.Debugf("❌ Failed to get repos for path matching: %v", err)
-		return false
-	}
-
-	// 查找匹配的仓库路径
-	var matchedRepo string
-	var remainingPath string
-	
-	for _, repo := range repos {
-		if cleanPath == repo {
-			matchedRepo = repo
-			remainingPath = ""
-			break
-		} else if strings.HasPrefix(cleanPath, repo+"/") {
-			matchedRepo = repo
-			remainingPath = strings.TrimPrefix(cleanPath, repo+"/")
-			break
-		}
-	}
-
-	if matchedRepo == "" {
-		log.Logger.Debugf("❌ No matching repository found for path: %s", cleanPath)
-		return false
-	}
-
-	// 获取仓库类型
-	repoType, err := h.repoService.GetRepoType(ctx, matchedRepo)
-	if err != nil {
-		log.Logger.Debugf("❌ Failed to get repo type for %s: %v", matchedRepo, err)
-		repoType = "unknown"
-	}
-
-	log.Logger.Debugf("✅ Matched repository: %s (type: %s), remaining path: %s", matchedRepo, repoType, remainingPath)
-
-	// 根据仓库类型选择存储方式
-	if utils.IsObjectStorage(repoType) {
-		// 对象存储：使用仓库服务
-		return h.handleObjectStorageBrowse(ctx, matchedRepo, remainingPath)
-	} else {
-		// 本地存储：使用文件系统
-		return h.handleLocalStorageBrowse(ctx, matchedRepo, remainingPath, cleanPath)
-	}
 }
