@@ -42,8 +42,19 @@ func (r *RPMRepo) UploadPackage(ctx context.Context, repoName string, filename s
 		return fmt.Errorf("invalid file type, expected .rpm")
 	}
 
+	repoPath := r.storage.GetPath(repoName)
+
+	// 检查是否是符号链接，如果是则解析到实际路径
+	realPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		log.Logger.Warnf("Failed to resolve symlinks for %s: %v", repoPath, err)
+		realPath = repoPath
+	}
+	
+	log.Logger.Debugf("Upload Package Repository path: %s -> %s", repoPath, realPath)
+
 	// 存储文件到 Packages 子目录
-	path := filepath.Join(repoName, "Packages", filename)
+	path := filepath.Join(realPath, "Packages", filename)
 	if err := r.storage.Store(ctx, path, reader); err != nil {
 		return fmt.Errorf("failed to store package: %w", err)
 	}
@@ -52,8 +63,19 @@ func (r *RPMRepo) UploadPackage(ctx context.Context, repoName string, filename s
 }
 
 func (r *RPMRepo) DownloadPackage(ctx context.Context, repoName string, filename string) (io.ReadCloser, error) {
+	repoPath := r.storage.GetPath(repoName)
+
+	// 检查是否是符号链接，如果是则解析到实际路径
+	realPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		log.Logger.Warnf("Failed to resolve symlinks for %s: %v", repoPath, err)
+		realPath = repoPath
+	}
+	
+	log.Logger.Debugf("Download Package Repository path: %s -> %s", repoPath, realPath)
+
 	// 从 Packages 子目录获取文件
-	path := filepath.Join(repoName, "Packages", filename)
+	path := filepath.Join(realPath, "Packages", filename)
 	return r.storage.Get(ctx, path)
 }
 
@@ -67,7 +89,7 @@ func (r *RPMRepo) RefreshMetadata(ctx context.Context, repoName string) error {
 		realPath = repoPath
 	}
 	
-	log.Logger.Debugf("Repository path: %s -> %s", repoPath, realPath)
+	log.Logger.Debugf("Refresh Metadata Repository path: %s -> %s", repoPath, realPath)
 
 	// 使用 createrepo 生成元数据
 	config := &createrepo.Config{

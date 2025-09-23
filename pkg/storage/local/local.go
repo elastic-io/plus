@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"plus/pkg/storage"
 	"plus/internal/log"
+	"plus/pkg/storage"
 )
 
 func init() {
@@ -26,9 +26,7 @@ func NewLocalStorage(basePath string) (storage.Storage, error) {
 	}, nil
 }
 
-func (l *LocalStorage) Store(ctx context.Context, path string, reader io.Reader) error {
-	fullPath := filepath.Join(l.basePath, path)
-
+func (l *LocalStorage) Store(ctx context.Context, fullPath string, reader io.Reader) error {
 	// 确保目录存在
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return err
@@ -229,34 +227,6 @@ func (l *LocalStorage) isRepoDirectory(dirPath string) bool {
 	
 	return false
 }
-/*
-func (l *LocalStorage) isRepoDirectory(dirPath string) bool {
-	// 解析可能的软链接
-	realDirPath := dirPath
-	if resolved, err := filepath.EvalSymlinks(dirPath); err == nil {
-		realDirPath = resolved
-		log.Logger.Debugf("Resolved repo directory symlink %s -> %s", dirPath, realDirPath)
-	}
-	
-	// 检查是否包含 Packages 目录
-	packagesPath := filepath.Join(realDirPath, "Packages")
-	if entries, err := os.ReadDir(packagesPath); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".rpm") {
-				return true
-			}
-		}
-	}
-
-	// 检查是否包含 repodata 目录
-	repodataPath := filepath.Join(realDirPath, "repodata")
-	if _, err := os.Stat(repodataPath); err == nil {
-		return true
-	}
-
-	return false
-}
-*/
 
 func (l *LocalStorage) CreateDir(ctx context.Context, path string) error {
 	fullPath := filepath.Join(l.basePath, path)
